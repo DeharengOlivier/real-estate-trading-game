@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: realestate-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: realestate-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  seed:
+    build:
+      context: .
+      dockerfile: ./infra/Dockerfile.seed
+    container_name: realestate-seed
+    environment:
+      - MONGODB_URL=mongodb://mongo:27017
+      - MONGODB_DB=realestate
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - ./seed:/app/seed
+
+  api:
+    build:
+      context: .
+      dockerfile: ./infra/Dockerfile.api
+    container_name: realestate-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=mongodb://mongo:27017
+      - MONGODB_DB=realestate
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=${SECRET_KEY:-please-set-secret-key-in-env-file}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    volumes:
+      - ./api:/app/api
+
+  ui:
+    build:
+      context: .
+      dockerfile: ./infra/Dockerfile.ui
+    container_name: realestate-ui
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - api
+    volumes:
+      - ./ui:/app/ui
+      - /app/ui/node_modules
+
+volumes:
+  mongo_data:
