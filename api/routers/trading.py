@@ -100,14 +100,7 @@ async def get_listings(
                         "kitchen": "$property.kitchen",
                         "bath": "$property.bath",
                         "basePpm": "$property.base_ppm",
-                        "price": "$lastComputedPrice",
-                        "pricePerM2": {
-                            "$cond": {
-                                "if": {"$gt": ["$property.surface", 0]},
-                                "then": {"$round": [{"$divide": ["$lastComputedPrice", "$property.surface"]}, 2]},
-                                "else": 0
-                            }
-                        }
+                        "price": "$lastComputedPrice"
                     }
                 }
             ],
@@ -133,6 +126,10 @@ async def get_listings(
         zone = item.get("zone")
         zone_trend = ZONE_TRENDS.get(zone, 0.005)
         
+        # Price per square metre (computed in Python for portability)
+        surface = item.get("surface", 0)
+        item["pricePerM2"] = round(item.get("price", 0) / surface, 2) if surface else 0
+
         # Add zone trend info (% per quarter)
         item["zoneTrend"] = round(zone_trend * 100, 2)  # Convert to percentage
         item["zoneTrendAnnual"] = round(zone_trend * 4 * 100, 1)  # Annual trend

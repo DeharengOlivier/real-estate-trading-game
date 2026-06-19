@@ -5,6 +5,7 @@ Single Responsibility: User authentication and authorization
 from fastapi import APIRouter, HTTPException, Depends, status
 from datetime import datetime, timedelta
 from collections import defaultdict
+from itertools import count
 import time
 import logging
 
@@ -22,6 +23,11 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 LOGIN_ATTEMPT_LIMIT = 5
 LOGIN_ATTEMPT_TIMEFRAME = 300  # 5 minutes in seconds
 fallback_login_attempts = defaultdict(list)
+
+# Monotonic counter used to build unique sorted-set members so that several
+# attempts within the same second are counted individually (the score still
+# carries the timestamp used for time-window pruning).
+_attempt_sequence = count()
 
 
 async def check_rate_limit(username: str) -> bool:
@@ -43,14 +49,18 @@ async def check_rate_limit(username: str) -> bool:
         return True
 
     key = f"login_attempts:{username}"
-    current_time = int(now)
+
+    # Use a unique member per attempt (timestamp + monotonic counter) so that
+    # multiple attempts within the same second are not collapsed into a single
+    # sorted-set entry. The score stays as the timestamp for window pruning.
+    member = f"{now:.6f}:{next(_attempt_sequence)}"
 
     # Start a transaction
     async with redis.pipeline(transaction=True) as pipe:
         # Remove timestamps older than the timeframe
-        pipe.zremrangebyscore(key, 0, current_time - LOGIN_ATTEMPT_TIMEFRAME)
+        pipe.zremrangebyscore(key, 0, now - LOGIN_ATTEMPT_TIMEFRAME)
         # Add the current login attempt
-        pipe.zadd(key, {str(current_time): current_time})
+        pipe.zadd(key, {member: now})
         # Set an expiration on the key to auto-clean old data
         pipe.expire(key, LOGIN_ATTEMPT_TIMEFRAME)
         # Get the count of recent attempts
