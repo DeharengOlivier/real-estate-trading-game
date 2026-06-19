@@ -17,7 +17,7 @@ async def test_health_check():
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] in ["ok", "degraded"]
+        assert data["status"] in ["healthy", "degraded", "unhealthy"]
         assert "timestamp" in data
         assert "dependencies" in data
 
@@ -75,7 +75,7 @@ async def test_buy_reduces_cash_and_creates_holding(test_user_and_token):
     # Test: Buy property with authentication
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(
-            "/buy",
+            "/trading/buy",
             json={"propertyId": str(property_result.inserted_id)},
             headers=headers
         )
@@ -162,7 +162,7 @@ async def test_sell_creates_trade_and_removes_holding(test_user_and_token):
     # Test: Sell property with authentication
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(
-            "/sell",
+            "/trading/sell",
             json={"propertyId": str(property_result.inserted_id)},
             headers=headers
         )
@@ -204,7 +204,7 @@ async def test_listings_filters():
     
     # Test: Filter by zone
     async with AsyncClient(app=app, base_url="http://test") as client:
-        response = await client.get("/listings?zone=Bruxelles-Centre")
+        response = await client.get("/trading/listings?zone=Bruxelles-Centre")
         assert response.status_code == 200
         data = response.json()
         # The response is paginated

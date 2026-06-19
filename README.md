@@ -86,7 +86,7 @@ docker-compose ps
 ```
 api/
   routers/          7 routers (auth, portfolio, trading, game, charts, admin, health)
-  tests/            Pytest tests (23/26 passing)
+  tests/            Pytest suite (76 tests, all green, no external services)
   models.py         Pydantic schemas
   services.py       Business logic (price calculation)
   database.py       MongoDB + Redis
@@ -156,25 +156,50 @@ Developed with AI assistance (GitHub Copilot). See `docs/AI-USAGE.md`.
 
 ## Tests
 
-### Running the tests
+The test suite runs entirely in-memory: it needs NO MongoDB and NO Redis.
+MongoDB is replaced by `mongomock-motor` and Redis by `fakeredis`, both wired in
+through fixtures in `api/tests/conftest.py`. You can run it on a bare Python
+environment with nothing else running.
+
+### Running the tests locally (no Docker, no database)
 
 ```bash
-# From the API container
-docker compose exec api pytest
+# From the repository root
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
-# Or locally if you have a Python environment
-cd api
-pip install -r requirements.txt
+# Runtime deps + the in-memory test mocks (mongomock-motor, fakeredis)
+pip install -r api/requirements.txt -r api/requirements-dev.txt
+
+# Run the whole suite
 pytest
 ```
 
-### Included tests
+> Tip: the pinned dependencies build cleanly on Python 3.11. If you are on a
+> newer interpreter and `pydantic-core` fails to build, use a 3.11 venv.
 
-- `test_buy_reduces_cash_and_creates_holding()` - Checks buying
-- `test_sell_creates_trade_and_removes_holding()` - Checks selling
-- `test_renovation_applies_deltas_after_duration()` - Checks renovation works
-- `test_advance_quarter_updates_prices()` - Checks time advancement
-- `test_listings_filters()` - Checks search filters
+### Running the tests in Docker (against the real stack)
+
+```bash
+docker compose exec api pytest
+```
+
+### What is covered
+
+- **Auth** - registration (happy path, weak password, duplicate), login,
+  `/auth/me`, JWT validation, and rate limiting (both the Redis and the
+  in-memory fallback paths).
+- **Trading** - listings filters (zone, type, price range), pagination and
+  sorting, buy (success, insufficient funds, unavailable), sell (success,
+  not-owned, blocked by ongoing renovation), P&L and fee accounting.
+- **Portfolio** - summary, equity, total value, unrealized P&L, and per-holding
+  cost basis (buy price + fees + renovation costs).
+- **Game** - renovation catalog, starting a renovation, advancing a quarter
+  (completing renovations, recomputing prices), current quarter.
+- **Admin** - full CRUD for properties and renovations, plus auth guards.
+- **Charts** - portfolio equity time series and property price history.
+- **Services** - pure unit tests for the pricing model, quarter math,
+  renovation deltas, and the password/JWT helpers.
 
 ## Limitations and how I would improve this
 
@@ -183,12 +208,13 @@ technical assessment of what I would harden or rework before treating it as
 production-grade.
 
 ### Testing
-- Currently 23 of 26 tests pass. The three failing cases should be triaged and
-  fixed (or removed if obsolete) rather than left red. A green suite is a
-  precondition for everything below.
-- Coverage is functional but shallow on edge cases: zero/negative prices,
-  selling a property with an ongoing renovation, advancing many quarters at
-  once, and concurrent buys of the same listing are not exercised.
+- The suite is green (76 tests) and runs with no external services, so it is
+  safe to gate CI on it. The previously failing cases were fixed: stale route
+  paths in the tests (`/buy` -> `/trading/buy`), a wrong expected health status,
+  and a genuine bug in the Redis rate limiter (sorted-set members keyed by
+  whole-second timestamps collided, so fast bursts were never throttled).
+- Remaining gaps worth covering next: advancing many quarters in a row,
+  concurrent buys of the same listing, and zero/negative price edge cases.
 - I would add `pytest --cov` to measure coverage and gate CI on a threshold.
 
 ### Concurrency and data integrity

@@ -1,0 +1,13 @@
+# Development & test dependencies.
+# Install on top of the runtime requirements:
+#   pip install -r api/requirements.txt -r api/requirements-dev.txt
+#
+# The test suite runs entirely in-memory with NO external services:
+#   - mongomock-motor  -> in-memory async MongoDB (drop-in for motor)
+#   - fakeredis        -> in-memory Redis
+# Both are wired in through fixtures in api/tests/conftest.py.
+
+-r requirements.txt
+
+mongomock-motor==0.0.36
+fakeredis==2.36.2

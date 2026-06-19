@@ -5,6 +5,7 @@ import pytest
 from httpx import AsyncClient
 from api.main import app
 from api.database import get_database
+import api.database as database
 
 
 @pytest.mark.asyncio
@@ -165,11 +166,79 @@ async def test_protected_endpoint_with_invalid_token():
 async def test_protected_endpoint_with_valid_token(test_user_and_token):
     """Test that protected endpoints work with valid tokens"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get("/portfolio/summary", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "cash" in data
         assert "totalValue" in data
+
+
+@pytest.mark.asyncio
+async def test_me_returns_current_user(test_user_and_token):
+    """The /auth/me endpoint returns the authenticated user's profile."""
+    user_data, token, headers = test_user_and_token
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.get("/auth/me", headers=headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["username"] == user_data["username"]
+        assert data["id"] == str(user_data["user_id"])
+        assert "cashBalance" in data
+        assert "roles" in data
+
+
+@pytest.mark.asyncio
+async def test_register_then_login_roundtrip():
+    """A freshly registered user can immediately log in."""
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        register = await client.post("/auth/register", json={
+            "username": "newuser",
+            "email": "newuser@example.com",
+            "password": "SecurePass123",
+            "name": "New User",
+        })
+        assert register.status_code == 201
+
+        login = await client.post("/auth/login", json={
+            "username": "newuser",
+            "password": "SecurePass123",
+        })
+        assert login.status_code == 200
+        assert login.json()["user"]["username"] == "newuser"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiting_fallback_without_redis(monkeypatch):
+    """Rate limiting also trips on the in-memory fallback path (no Redis)."""
+    # Force the Redis-less code path.
+    monkeypatch.setattr(database, "redis_client", None)
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        statuses = []
+        for _ in range(6):
+            response = await client.post("/auth/login", json={
+                "username": "ratelimit", "password": "WrongPass123"
+            })
+            statuses.append(response.status_code)
+
+    assert statuses[-1] == 429
+    assert statuses[0] == 401
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_is_per_username():
+    """Hitting the limit for one user does not block a different user."""
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        for _ in range(6):
+            await client.post("/auth/login", json={
+                "username": "ratelimit", "password": "WrongPass123"
+            })
+        # A different username is still allowed (gets 401, not 429).
+        response = await client.post("/auth/login", json={
+            "username": "otheruser", "password": "WrongPass123"
+        })
+        assert response.status_code == 401

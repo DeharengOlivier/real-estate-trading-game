@@ -6,39 +6,34 @@ Unit and integration tests for the FastAPI API.
 
 ```
 tests/
-├── __init__.py       Package marker
-├── conftest.py       Shared pytest fixtures
-└── test_api.py       Endpoint tests
+├── __init__.py        Package marker
+├── conftest.py        Shared fixtures + in-memory MongoDB/Redis wiring
+├── test_api.py        Health, buy/sell, listings filter
+├── test_auth.py       Registration, login, JWT guards, rate limiting
+├── test_admin.py      Property/renovation CRUD + auth guards
+├── test_trading.py    Listings filters/pagination, buy, sell, P&L
+├── test_portfolio.py  Summary, equity, unrealized P&L, holdings detail
+├── test_game.py       Renovations, advance-quarter, current quarter
+├── test_charts.py     Portfolio equity series, property price history
+└── test_services.py   Pure unit tests (pricing, quarter math, auth helpers)
 ```
 
 ## conftest.py
 
-Global test configuration.
+The suite runs with NO external services. `conftest.py`:
+
+- Monkeypatches `api.database.connect_to_mongo` / `connect_to_redis` so the app
+  uses an in-memory `mongomock-motor` client and a `fakeredis` instance.
+- Resets all collections and the rate-limit state before each test, then seeds a
+  deterministic baseline (a `2020-1` market index for every zone and the full
+  renovation catalog).
 
 **Fixtures:**
 
-`client` - FastAPI test client
-- Scope: function (new for each test)
-- Returns: TestClient(app)
-- Usage: Make HTTP requests without a server
+`setup_database` (autouse) - resets and seeds the in-memory DB/Redis per test.
 
-`test_db` - Test database
-- Scope: function
-- Creates a temporary MongoDB DB
-- Name: `test_realestate_{random}`
-- Automatic cleanup after each test
-
-`test_user` - Test user
-- Scope: function
-- Username: `testuser{random}`
-- Password: `testpass123`
-- Created via POST /auth/register
-- Returns: dict with token and user_id
-
-**Lifecycle:**
-1. Before test: set up DB, create user
-2. During test: execution
-3. After test: clean up DB
+`test_user_and_token` - inserts a user (with `user` + `admin` roles) and its
+portfolio, returning `(user_data, token, headers)` with a ready-to-use JWT.
 
 ## test_api.py
 
@@ -204,31 +199,29 @@ assert user["email"] == "test@example.com"
 
 ## Mocking
 
-Redis is mocked automatically:
-- Rate limiting disabled in tests
-- No Redis connection required
-- In-memory fallback used
+No real services are needed:
 
-Test MongoDB:
-- Separate database for each test
-- Complete isolation
-- Automatic cleanup
+- **MongoDB** -> `mongomock-motor`, an in-memory async client that is a drop-in
+  for `motor`. Aggregation pipelines (`$lookup`, `$unwind`, `$facet`) used by the
+  listings endpoint run against it.
+- **Redis** -> `fakeredis` (async), so rate limiting is actually exercised in
+  tests (both the Redis path and the in-memory fallback path) rather than
+  disabled.
+
+Both are installed via `api/requirements-dev.txt`.
 
 ## Current Coverage
 
-About 88% (23/26 tests passing)
+76 tests, all passing.
 
 **Covered areas:**
-- Full authentication
-- Basic portfolio
-- Trading buy/sell
-- Game mechanics
-- Admin CRUD
-
-**Not covered:**
-- Renovations
-- Charts/graphs
-- Complex edge cases
+- Authentication (register, login, JWT, rate limiting)
+- Portfolio summary, equity and P&L
+- Trading buy/sell incl. insufficient funds and ongoing-renovation guard
+- Game mechanics incl. renovations and advancing quarters
+- Admin CRUD for properties and renovations
+- Charts (equity series, price history)
+- Pricing/quarter/renovation unit tests
 
 ## Adding New Tests
 

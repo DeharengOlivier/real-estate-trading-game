@@ -1,57 +1,154 @@
 """
-Pytest configuration and fixtures
+Pytest configuration and fixtures.
+
+The test suite runs with NO external services: MongoDB is replaced by
+``mongomock-motor`` (an in-memory async Motor-compatible client) and Redis by
+``fakeredis``. Both are wired in by monkeypatching the connection helpers in
+``api.database`` so the application code (and its ``get_database`` /
+``get_redis_client`` accessors) work unchanged.
 """
-import pytest
-import pytest_asyncio
 import asyncio
 from datetime import datetime
-from bson import ObjectId
-import os
 
-from api.database import connect_to_mongo, close_mongo_connection, get_database
+import pytest
+import pytest_asyncio
+from mongomock_motor import AsyncMongoMockClient
+import fakeredis.aioredis as fakeredis
+
+import api.database as database
 from api.auth import create_access_token, get_password_hash
+
+# Reusable singletons for the whole test session. Keeping a single mongomock
+# client means data inserted by a fixture is visible to the request handlers,
+# while we reset collections between tests for isolation.
+_mock_mongo_client = AsyncMongoMockClient()
+_mock_db_name = "realestate_test"
+
+# Collections that get wiped between tests.
+_COLLECTIONS = [
+    "users",
+    "portfolios",
+    "holdings",
+    "trades",
+    "properties",
+    "listings",
+    "marketindex",
+    "renovations",
+    "pricehistory",
+]
+
+
+async def _fake_connect_to_mongo():
+    """Mongomock-backed replacement for api.database.connect_to_mongo."""
+    database.mongodb_client = _mock_mongo_client
+    database.mongodb_db = _mock_mongo_client[_mock_db_name]
+
+
+async def _fake_connect_to_redis():
+    """fakeredis-backed replacement for api.database.connect_to_redis."""
+    if database.redis_client is None:
+        database.redis_client = fakeredis.FakeRedis(decode_responses=True)
+
+
+async def _fake_close_mongo_connection():
+    """No-op: keep the in-memory client alive across tests."""
+    return None
+
+
+async def _fake_close_redis_connection():
+    """No-op: keep the in-memory Redis alive across tests."""
+    return None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def patch_external_services():
+    """Patch the database/redis connection helpers for the whole session."""
+    original = {
+        "connect_to_mongo": database.connect_to_mongo,
+        "connect_to_redis": database.connect_to_redis,
+        "close_mongo_connection": database.close_mongo_connection,
+        "close_redis_connection": database.close_redis_connection,
+    }
+    database.connect_to_mongo = _fake_connect_to_mongo
+    database.connect_to_redis = _fake_connect_to_redis
+    database.close_mongo_connection = _fake_close_mongo_connection
+    database.close_redis_connection = _fake_close_redis_connection
+
+    yield
+
+    for name, fn in original.items():
+        setattr(database, name, fn)
 
 
 @pytest.fixture(scope="session")
 def event_loop():
-    """Create event loop for async tests"""
+    """Create a single event loop for the whole test session."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 
 
+async def _seed_baseline(db):
+    """Insert a minimal, deterministic data set used by several tests.
+
+    - A market index for "2020-1" covering every zone (so price computation and
+      the current-quarter helpers work).
+    - The full renovation catalog (several tests expect a non-empty catalog).
+
+    Properties/listings are intentionally NOT seeded here so that tests which
+    assert an exact item count stay deterministic; tests that need a property
+    create their own.
+    """
+    from seed.constants import ZONES, RENOVATIONS
+
+    locals_data = [
+        {"zone": z, "access": 0.0, "attract": 0.0, "nuisance": 0.05, "tension": 0.0}
+        for z in ZONES
+    ]
+    await db.marketindex.insert_one({
+        "t": "2020-1",
+        "inflation": 0.02,
+        "rate": 0.015,
+        "income": 0.01,
+        "unemployment": 0.05,
+        "confidence": 0.0,
+        "policy": 0.0,
+        "locals": locals_data,
+    })
+
+    await db.renovations.insert_many([dict(r) for r in RENOVATIONS])
+
+
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def setup_database():
-    """Setup database connection before each test"""
-    await connect_to_mongo()
-    
+    """Reset and seed the in-memory database before each test."""
+    await database.connect_to_mongo()
+    await database.connect_to_redis()
+
+    db = database.get_database()
+    for name in _COLLECTIONS:
+        await db[name].delete_many({})
+
+    # Reset the fakeredis store and the in-memory rate-limit fallback so each
+    # test starts from a clean slate.
+    if database.redis_client is not None:
+        await database.redis_client.flushall()
+    from api.routers import auth as auth_router
+    auth_router.fallback_login_attempts.clear()
+
+    await _seed_baseline(db)
+
     yield
-    
-    # Cleanup test data after each test
-    db = get_database()
-    if db is not None:
-        # Clean up test users created during tests
-        await db.users.delete_many({"username": {"$regex": "^(testuser|newuser|weakuser|duplicate|testlogin|ratelimit)"}})
-        await db.portfolios.delete_many({})
-        await db.holdings.delete_many({})
-        await db.trades.delete_many({})
-        # Clean up test data from tests
-        await db.properties.delete_many({"zone": {"$in": ["Test Zone", "Update Test", "Delete Test", "Bruxelles-Centre", "Ixelles", "Gand-Centre", "Namur-Centre", "Liège-Centre"]}})
-        await db.listings.delete_many({})
-        await db.marketindex.delete_many({"t": {"$regex": "^2020-"}})
-        await db.renovations.delete_many({"code": {"$regex": "^TEST_"}})
-        await db.pricehistory.delete_many({})
-    
-    await close_mongo_connection()
+
+    # Nothing to tear down: collections are reset on the next setup.
 
 
 @pytest_asyncio.fixture
 async def test_user_and_token():
-    """Create a test user and return user data with JWT token"""
-    db = get_database()
-    
-    # Create test user with hashed password and ADMIN role
+    """Create a test user (with admin role) and return creds + JWT headers."""
+    db = database.get_database()
+
     password = "TestPassword123"
     user_data = {
         "username": "testuser",
@@ -59,28 +156,24 @@ async def test_user_and_token():
         "name": "Test User",
         "hashedPassword": get_password_hash(password),
         "cashBalance": 1000000.0,
-        "roles": ["user", "admin"],  # Added admin role for tests
-        "createdAt": datetime.utcnow()
+        "roles": ["user", "admin"],
+        "createdAt": datetime.utcnow(),
     }
-    
+
     result = await db.users.insert_one(user_data)
     user_id = result.inserted_id
-    
-    # Create portfolio for user
-    portfolio_data = {
+
+    await db.portfolios.insert_one({
         "userId": user_id,
         "cash": 1000000.0,
-        "createdAt": datetime.utcnow()
-    }
-    await db.portfolios.insert_one(portfolio_data)
-    
-    # Generate JWT token
+        "createdAt": datetime.utcnow(),
+    })
+
     token = create_access_token(data={"sub": str(user_id)})
     headers = {"Authorization": f"Bearer {token}"}
-    
-    # Return user credentials and token info
+
     return {
         "username": "testuser",
         "password": password,
-        "user_id": user_id
+        "user_id": user_id,
     }, token, headers

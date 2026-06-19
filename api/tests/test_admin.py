@@ -54,14 +54,25 @@ async def test_create_property_invalid_data(test_user_and_token):
 async def test_get_all_properties(test_user_and_token):
     """Test retrieving all properties"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
+        # Create a property so the list is non-empty
+        await client.post("/admin/properties", headers=headers, json={
+            "zone": "Bruxelles-Centre",
+            "type": "apartment",
+            "surface": 80,
+            "epc": 0.5,
+            "state": 0.6,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": 4200
+        })
+
         response = await client.get("/admin/properties", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
-        # Should have properties from seed data
         assert len(data) > 0
 
 
@@ -69,13 +80,21 @@ async def test_get_all_properties(test_user_and_token):
 async def test_get_property_by_id(test_user_and_token):
     """Test retrieving a specific property by ID"""
     user_data, token, headers = test_user_and_token
-    db = get_database()
-    
-    # Get a property from database
-    prop = await db.properties.find_one()
-    property_id = str(prop['_id'])
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
+        # Create a property to fetch
+        create_response = await client.post("/admin/properties", headers=headers, json={
+            "zone": "Ixelles",
+            "type": "house",
+            "surface": 120,
+            "epc": 0.6,
+            "state": 0.7,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": 4800
+        })
+        property_id = create_response.json()["id"]
+
         response = await client.get(f"/admin/properties/{property_id}", headers=headers)
         
         assert response.status_code == 200
