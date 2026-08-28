@@ -143,11 +143,12 @@ Authentication and authorization.
   "email": str,
   "name": str,
   "hashedPassword": str,
-  "cashBalance": float,
   "roles": list[str],
   "createdAt": datetime
 }
 ```
+The balance is not here: it lives in `portfolios.cash`, which is what trading
+moves. A copy on the user would be stale from the first purchase onwards.
 
 **portfolios**
 ```python

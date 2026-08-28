@@ -164,7 +164,6 @@ async def test_user_and_token():
         "email": "test@example.com",
         "name": "Test User",
         "hashedPassword": get_password_hash(password),
-        "cashBalance": 1000000.0,
         "roles": ["user", "admin"],
         "createdAt": datetime.utcnow(),
     }

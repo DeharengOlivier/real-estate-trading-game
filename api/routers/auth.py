@@ -10,6 +10,7 @@ import time
 import logging
 
 from api.database import get_database, get_redis_client
+from seed.constants import INITIAL_CASH
 from api.models import UserRegister, UserLogin, Token
 from api.auth import (
     create_access_token, get_password_hash, authenticate_user,
@@ -112,6 +113,17 @@ def validate_password_strength(password: str) -> None:
         )
 
 
+async def _cash_of(db, user_id) -> float:
+    """Read a user's balance from the portfolio, the only thing that holds it.
+
+    Trading moves ``portfolios.cash`` and nothing else. Any second copy of the
+    number is stale from the first purchase onwards, so there is no second copy
+    to read: this is the one place the balance comes from.
+    """
+    portfolio = await db.portfolios.find_one({"userId": user_id})
+    return portfolio["cash"] if portfolio else 0.0
+
+
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserRegister):
     """
@@ -120,7 +132,7 @@ async def register(user_data: UserRegister):
     Creates a new user with:
     - Unique username
     - Strong password (hashed with bcrypt)
-    - Initial cash balance (100,000 by default)
+    - A portfolio holding the starting cash
     - Default role: "user"
     """
     db = get_database()
@@ -148,7 +160,6 @@ async def register(user_data: UserRegister):
         "email": user_data.email,
         "name": user_data.name,
         "hashedPassword": hashed_password,
-        "cashBalance": 1000000.0,  # Starting cash
         "roles": list(DEFAULT_ROLES),
         "createdAt": datetime.utcnow()
     }
@@ -159,7 +170,7 @@ async def register(user_data: UserRegister):
     # Create portfolio for the new user
     portfolio_data = {
         "userId": user_id,
-        "cash": 1000000.0,  # Starting with 1,000,000 €
+        "cash": float(INITIAL_CASH),
         "createdAt": datetime.utcnow()
     }
     await db.portfolios.insert_one(portfolio_data)
@@ -180,7 +191,7 @@ async def register(user_data: UserRegister):
             "username": user_data.username,
             "email": user_data.email,
             "name": user_data.name,
-            "cashBalance": 1000000.0,
+            "cashBalance": float(INITIAL_CASH),
             "roles": list(DEFAULT_ROLES)
         }
     }
@@ -219,7 +230,7 @@ async def login(user_data: UserLogin):
             "username": user["username"],
             "email": user.get("email", ""),
             "name": user.get("name", ""),
-            "cashBalance": user.get("cashBalance", 0),
+            "cashBalance": await _cash_of(get_database(), user["_id"]),
             "roles": user.get("roles", list(DEFAULT_ROLES))
         }
     }
@@ -239,6 +250,6 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     return {
         "id": str(current_user["_id"]),
         "username": current_user["username"],
-        "cashBalance": current_user.get("cashBalance", 0),
+        "cashBalance": await _cash_of(get_database(), current_user["_id"]),
         "roles": current_user.get("roles", list(DEFAULT_ROLES))
     }
