@@ -72,17 +72,29 @@ class UserRegister(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     name: str
-    password: str = Field(min_length=8, description="Minimum 8 characters, must contain uppercase, lowercase, and digit")
-    
+    password: str = Field(
+        min_length=8,
+        description="At least 8 characters, with an uppercase letter, a "
+                    "lowercase letter and a digit",
+    )
+
     @field_validator('password')
     @classmethod
-    def validate_password_strength(cls, v):
-        import re
-        if not re.search(r'[A-Z]', v):
+    def validate_password_strength(cls, v: str) -> str:
+        """The password rule, stated here and nowhere else.
+
+        Registration is the only way a password enters the system, so this is
+        the boundary that owns the rule. A second copy inside the handler would
+        be unreachable (pydantic runs first) and free to drift.
+
+        ``str.isupper`` and friends are used rather than an ASCII character
+        class, so an accented capital counts as a capital.
+        """
+        if not any(c.isupper() for c in v):
             raise ValueError('Password must contain at least one uppercase letter')
-        if not re.search(r'[a-z]', v):
+        if not any(c.islower() for c in v):
             raise ValueError('Password must contain at least one lowercase letter')
-        if not re.search(r'[0-9]', v):
+        if not any(c.isdigit() for c in v):
             raise ValueError('Password must contain at least one digit')
         return v
 

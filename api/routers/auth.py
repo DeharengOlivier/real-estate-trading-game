@@ -80,39 +80,6 @@ async def check_rate_limit(username: str) -> bool:
     return True
 
 
-def validate_password_strength(password: str) -> None:
-    """
-    Validate password strength
-    Requirements:
-    - At least 8 characters
-    - Contains uppercase and lowercase
-    - Contains a number
-    """
-    if len(password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
-        )
-    
-    if not any(c.isupper() for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one uppercase letter"
-        )
-    
-    if not any(c.islower() for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one lowercase letter"
-        )
-    
-    if not any(c.isdigit() for c in password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must contain at least one number"
-        )
-
-
 async def _cash_of(db, user_id) -> float:
     """Read a user's balance from the portfolio, the only thing that holds it.
 
@@ -136,10 +103,9 @@ async def register(user_data: UserRegister):
     - Default role: "user"
     """
     db = get_database()
-    
-    # Validate password strength
-    validate_password_strength(user_data.password)
-    
+
+    # The password rule is stated once, on UserRegister, and enforced before
+    # this function is entered: a request that gets here has already passed it.
     # Check if username already exists
     existing_user = await db.users.find_one({"username": user_data.username})
     if existing_user:
