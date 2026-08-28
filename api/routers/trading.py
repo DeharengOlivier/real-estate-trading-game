@@ -5,6 +5,7 @@ Single Responsibility: Property transactions and market operations
 from fastapi import APIRouter, HTTPException, Query, Depends
 from bson import ObjectId
 from datetime import datetime
+from pymongo import ReturnDocument
 from typing import Optional
 import logging
 
@@ -15,6 +16,31 @@ from api.services import get_current_quarter, get_property_current_price, ZONE_T
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/trading", tags=["Trading"])
+
+# Charged on both sides of a trade, on the price of the property.
+TRANSACTION_FEE_RATE = 0.025
+
+
+def _first_day_of_quarter(quarter: str) -> datetime:
+    """Turn a game quarter such as "2024-3" into the date its quarter starts.
+
+    Trades are stamped with a game date, not a wall-clock one, so that a chart
+    of a portfolio reads against the simulated timeline.
+    """
+    year, index = map(int, quarter.split('-'))
+    return datetime(year, (index - 1) * 3 + 1, 1)
+
+
+async def _release_listing(db, property_id: ObjectId) -> None:
+    """Put a property back on the market.
+
+    Called on the two paths that give a claimed property up: a purchase that
+    could not be paid for, and a completed sale.
+    """
+    await db.listings.update_one(
+        {"propertyId": property_id},
+        {"$set": {"isAvailable": True}}
+    )
 
 
 @router.get("/listings")
@@ -166,141 +192,101 @@ async def get_listings(
 async def buy_property(request: BuyRequest, current_user: dict = Depends(get_current_user)):
     """
     Buy a property from the market
-    
-    - Deducts price + fees (2.5%) from cash
-    - Creates holding record
-    - Creates trade record
-    - Marks listing as unavailable
-    
-    Uses MongoDB transaction for atomicity (with fallback)
+
+    - Claims the listing, so exactly one of two concurrent buyers wins it
+    - Debits price + fees (2.5%) only if the balance actually covers them
+    - Creates the holding and the trade record
+
+    Concurrency
+    -----------
+    Both scarce things here (the property, the cash) are claimed with a single
+    conditional write whose precondition lives in the filter, so the database
+    decides the winner. Reading a value, checking it in Python and writing the
+    result back is advisory: two requests read the same balance, both pass the
+    check, and the second write silently overwrites the first.
+
+    The claim comes first and the debit second, so a buyer who cannot pay
+    releases the property again rather than holding it while the payment fails.
+    Neither step depends on a transaction being available.
     """
     db = get_database()
-    
+
     property_id = ObjectId(request.propertyId)
-    
-    # Get user's portfolio
+
     portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    
+
     portfolio_id = portfolio['_id']
-    cash = portfolio['cash']
-    
-    # Check if property is available
-    listing = await db.listings.find_one({
-        "propertyId": property_id,
-        "isAvailable": True
-    })
-    
+
+    # Claim the listing. find_one_and_update is atomic and returns the document
+    # as it was before the write, so the price we pay is the price we claimed.
+    listing = await db.listings.find_one_and_update(
+        {"propertyId": property_id, "isAvailable": True},
+        {"$set": {"isAvailable": False}}
+    )
+
     if not listing:
         raise HTTPException(status_code=404, detail="Property not available")
-    
+
     price = listing['lastComputedPrice']
-    fees = price * 0.025  # 2.5% transaction fees
+    fees = price * TRANSACTION_FEE_RATE
     total_cost = price + fees
-    
-    # Check sufficient cash
-    if cash < total_cost:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Insufficient funds. Need {total_cost:,.2f} €, have {cash:,.2f} €"
-        )
-    
-    # Get current game quarter for trade timestamp
+
     current_quarter = await get_current_quarter(db)
-    # Convert quarter string (e.g. "2024-4") to approximate datetime
-    year, quarter = map(int, current_quarter.split('-'))
-    trade_date = datetime(year, (quarter - 1) * 3 + 1, 1)  # First day of the quarter
-    
-    # Try to use MongoDB transaction for atomicity (requires replica set)
-    # Falls back to sequential operations if transactions not available
-    try:
-        async with await db.client.start_session() as session:
-            async with session.start_transaction():
-                # Create holding
-                holding = {
-                    "portfolioId": portfolio_id,
-                    "propertyId": property_id,
-                    "buyPrice": price,
-                    "buyDate": trade_date,
-                    "works": []
-                }
-                await db.holdings.insert_one(holding, session=session)
-                
-                # Create trade record
-                trade = {
-                    "portfolioId": portfolio_id,
-                    "propertyId": property_id,
-                    "side": "buy",
-                    "price": price,
-                    "fees": fees,
-                    "ts": trade_date,
-                    "quarter": current_quarter
-                }
-                await db.trades.insert_one(trade, session=session)
-                
-                # Update cash
-                new_cash = cash - total_cost
-                await db.portfolios.update_one(
-                    {"_id": portfolio_id},
-                    {"$set": {"cash": new_cash}},
-                    session=session
-                )
-                
-                # Mark listing as unavailable
-                await db.listings.update_one(
-                    {"propertyId": property_id},
-                    {"$set": {"isAvailable": False}},
-                    session=session
-                )
-    except Exception as e:
-        # If transactions not supported, fall back to sequential operations
-        logger.warning(f"Transaction not supported, using sequential operations: {e}")
-        
-        # Create holding
-        holding = {
-            "portfolioId": portfolio_id,
-            "propertyId": property_id,
-            "buyPrice": price,
-            "buyDate": trade_date,
-            "works": []
-        }
-        await db.holdings.insert_one(holding)
-        
-        # Create trade record
-        trade = {
-            "portfolioId": portfolio_id,
-            "propertyId": property_id,
-            "side": "buy",
-            "price": price,
-            "fees": fees,
-            "ts": trade_date,
-            "quarter": current_quarter
-        }
-        await db.trades.insert_one(trade)
-        
-        # Update cash
-        new_cash = cash - total_cost
-        await db.portfolios.update_one(
-            {"_id": portfolio_id},
-            {"$set": {"cash": new_cash}}
+    trade_date = _first_day_of_quarter(current_quarter)
+
+    # The holding is created before the money moves. These are two writes, and
+    # a process that dies between them leaves one of the two states behind: a
+    # property nobody paid for, or a payment for nothing. The first is the one
+    # to prefer, so it is the one this order can produce.
+    holding = await db.holdings.insert_one({
+        "portfolioId": portfolio_id,
+        "propertyId": property_id,
+        "buyPrice": price,
+        "buyDate": trade_date,
+        "works": []
+    })
+
+    # Debit with the affordability condition in the filter: the balance is read
+    # and written in one operation, so it can never go negative.
+    debited = await db.portfolios.find_one_and_update(
+        {"_id": portfolio_id, "cash": {"$gte": total_cost}},
+        {"$inc": {"cash": -total_cost}},
+        return_document=ReturnDocument.AFTER
+    )
+
+    if not debited:
+        # Nothing was charged, so undo the two claims: hand the property back
+        # and put it on the market it was taken off a moment ago.
+        await db.holdings.delete_one({"_id": holding.inserted_id})
+        await _release_listing(db, property_id)
+        current = await db.portfolios.find_one({"_id": portfolio_id})
+        available = current['cash'] if current else 0.0
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient funds. Need {total_cost:,.2f} €, have {available:,.2f} €"
         )
-        
-        # Mark listing as unavailable
-        await db.listings.update_one(
-            {"propertyId": property_id},
-            {"$set": {"isAvailable": False}}
-        )
-    
+
+    await db.trades.insert_one({
+        "portfolioId": portfolio_id,
+        "propertyId": property_id,
+        "side": "buy",
+        "price": price,
+        "fees": fees,
+        "ts": trade_date,
+        "quarter": current_quarter
+    })
+
     logger.info(f"User {current_user['username']} bought property {property_id} for {price}")
-    
+
     return {
         "success": True,
         "propertyId": str(property_id),
         "price": round(price, 2),
         "fees": round(fees, 2),
         "totalCost": round(total_cost, 2),
-        "remainingCash": round(new_cash, 2)
+        "remainingCash": round(debited['cash'], 2)
     }
 
 
@@ -308,123 +294,78 @@ async def buy_property(request: BuyRequest, current_user: dict = Depends(get_cur
 async def sell_property(request: SellRequest, current_user: dict = Depends(get_current_user)):
     """
     Sell a property from holdings
-    
-    - Cannot sell if renovations are ongoing
-    - Adds net proceeds (price - 2.5% fees) to cash
-    - Removes holding record
-    - Creates trade record
-    - Marks listing as available
-    
-    Uses MongoDB transaction for atomicity (with fallback)
+
+    - Cannot sell while a renovation is ongoing
+    - Claims the holding, so two concurrent sales cannot both be paid
+    - Credits net proceeds (price - 2.5% commission) and puts the property back
+      on the market
+
+    Concurrency
+    -----------
+    The holding is the scarce resource, and it is removed with a single atomic
+    find_one_and_delete. The loser of a race gets the same answer as somebody
+    selling a property they never owned: 404. Reading the holding, deciding, and
+    deleting it afterwards would pay both sellers.
     """
     db = get_database()
-    
+
     property_id = ObjectId(request.propertyId)
-    
-    # Get user's portfolio
+
     portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    
+
     portfolio_id = portfolio['_id']
-    
-    # Find holding
+
+    # Refuse an ongoing renovation before claiming anything, so a refusal
+    # leaves the holding untouched.
     holding = await db.holdings.find_one({
         "portfolioId": portfolio_id,
         "propertyId": property_id
     })
-    
     if not holding:
         raise HTTPException(status_code=404, detail="Property not in portfolio")
-    
-    # Check for ongoing works
-    ongoing_works = [w for w in holding.get('works', []) if w['status'] == 'ongoing']
-    if ongoing_works:
+
+    if any(work['status'] == 'ongoing' for work in holding.get('works', [])):
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Cannot sell property with ongoing renovations"
         )
-    
-    # Get current price
+
+    # Claim the holding. Whoever removes it is the one who gets paid for it.
+    claimed = await db.holdings.find_one_and_delete({"_id": holding['_id']})
+    if not claimed:
+        raise HTTPException(status_code=404, detail="Property not in portfolio")
+
     current_t = await get_current_quarter(db)
     current_price = await get_property_current_price(db, property_id, current_t)
-    
-    fees = current_price * 0.025  # 2.5% transaction fees
+
+    fees = current_price * TRANSACTION_FEE_RATE
     net_proceeds = current_price - fees
-    
-    # Convert quarter string to datetime for trade timestamp
-    year, quarter = map(int, current_t.split('-'))
-    trade_date = datetime(year, (quarter - 1) * 3 + 1, 1)
-    
-    # Try to use MongoDB transaction for atomicity (requires replica set)
-    # Falls back to sequential operations if transactions not available
-    try:
-        async with await db.client.start_session() as session:
-            async with session.start_transaction():
-                # Create trade record
-                trade = {
-                    "portfolioId": portfolio_id,
-                    "propertyId": property_id,
-                    "side": "sell",
-                    "price": current_price,
-                    "fees": fees,
-                    "ts": trade_date,
-                    "quarter": current_t
-                }
-                await db.trades.insert_one(trade, session=session)
-                
-                # Update cash
-                await db.portfolios.update_one(
-                    {"_id": portfolio_id},
-                    {"$inc": {"cash": net_proceeds}},
-                    session=session
-                )
-                
-                # Remove holding
-                await db.holdings.delete_one({"_id": holding['_id']}, session=session)
-                
-                # Mark listing as available again
-                await db.listings.update_one(
-                    {"propertyId": property_id},
-                    {"$set": {"isAvailable": True}},
-                    session=session
-                )
-    except Exception as e:
-        # If transactions not supported, fall back to sequential operations
-        logger.warning(f"Transaction not supported, using sequential operations: {e}")
-        
-        # Create trade record
-        trade = {
-            "portfolioId": portfolio_id,
-            "propertyId": property_id,
-            "side": "sell",
-            "price": current_price,
-            "fees": fees,
-            "ts": trade_date,
-            "quarter": current_t
-        }
-        await db.trades.insert_one(trade)
-        
-        # Update cash
-        await db.portfolios.update_one(
-            {"_id": portfolio_id},
-            {"$inc": {"cash": net_proceeds}}
-        )
-        
-        # Remove holding
-        await db.holdings.delete_one({"_id": holding['_id']})
-        
-        # Mark listing as available again
-        await db.listings.update_one(
-            {"propertyId": property_id},
-            {"$set": {"isAvailable": True}}
-        )
-    
-    buy_price = holding['buyPrice']
+    trade_date = _first_day_of_quarter(current_t)
+
+    await db.portfolios.update_one(
+        {"_id": portfolio_id},
+        {"$inc": {"cash": net_proceeds}}
+    )
+
+    await db.trades.insert_one({
+        "portfolioId": portfolio_id,
+        "propertyId": property_id,
+        "side": "sell",
+        "price": current_price,
+        "fees": fees,
+        "ts": trade_date,
+        "quarter": current_t
+    })
+
+    await _release_listing(db, property_id)
+
+    buy_price = claimed['buyPrice']
     pnl = net_proceeds - buy_price
-    
+
     logger.info(f"User {current_user['username']} sold property {property_id} for {current_price}, P&L: {pnl}")
-    
+
     return {
         "success": True,
         "propertyId": str(property_id),
