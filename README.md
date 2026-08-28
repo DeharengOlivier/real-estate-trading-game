@@ -57,6 +57,17 @@ A real-estate trading game with an economic simulation of the Belgian housing ma
 ### Prerequisites
 - Docker Desktop installed and running
 
+### Configuration
+
+The API signs its JWTs with `SECRET_KEY` and refuses to start without one:
+there is no default, because a fallback key turns a forgotten variable into a
+working API whose tokens anyone reading this repository can forge.
+
+```bash
+cp .env.example .env
+echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
+```
+
 ### Full Launch
 ```bash
 # Start everything with a single command

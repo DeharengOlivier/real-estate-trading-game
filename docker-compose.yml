@@ -50,7 +50,11 @@ services:
       - MONGODB_URL=mongodb://mongo:27017
       - MONGODB_DB=realestate
       - REDIS_URL=redis://redis:6379
-      - SECRET_KEY=${SECRET_KEY:-please-set-secret-key-in-env-file}
+      # No default on purpose: `docker compose up` with no SECRET_KEY in the
+      # environment must fail loudly rather than start an API whose tokens
+      # anyone reading this file could forge. Generate one with
+      # `openssl rand -hex 32` and put it in .env.
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env, see .env.example}
       - API_HOST=0.0.0.0
       - API_PORT=8000
     depends_on:

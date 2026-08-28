@@ -8,7 +8,16 @@ The test suite runs with NO external services: MongoDB is replaced by
 ``get_redis_client`` accessors) work unchanged.
 """
 import asyncio
+import os
 from datetime import datetime
+
+# api.auth refuses to import without a usable SECRET_KEY, which is the point of
+# the check. Provide one before anything imports the application. setdefault,
+# not assignment: a developer running with a real key in their environment
+# keeps it, and the suite still exercises the same code path.
+os.environ.setdefault(
+    "SECRET_KEY", "test-only-signing-key-do-not-use-outside-the-test-suite"
+)
 
 import pytest
 import pytest_asyncio

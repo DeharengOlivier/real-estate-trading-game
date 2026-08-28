@@ -14,8 +14,64 @@ import os
 from api.database import get_database
 
 # Configuration
-# Read secret from environment (fallback for dev only)
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-please")
+# HS256 signs with the key itself, so the key is the whole secret: anyone
+# holding it can mint a token for any user id. 256 bits is the floor.
+MINIMUM_SECRET_KEY_LENGTH = 32
+
+# Values that have shipped in this repository, in .env.example or in
+# docker-compose.yml. They are published, so they are not secrets.
+PUBLISHED_PLACEHOLDER_KEYS = frozenset({
+    "change-me-please",
+    "change-me-in-production",
+    "please-set-secret-key-in-env-file",
+    "your-secret-key",
+    "secret",
+})
+
+_KEY_HELP = (
+    "Set SECRET_KEY to at least "
+    f"{MINIMUM_SECRET_KEY_LENGTH} characters of random material. Generate one "
+    "with:\n"
+    "    openssl rand -hex 32\n"
+    "or, without openssl:\n"
+    "    python -c \"import secrets; print(secrets.token_hex(32))\""
+)
+
+
+def _read_secret_key() -> str:
+    """Read the JWT signing key from the environment, or refuse to start.
+
+    There is deliberately no default. A fallback key turns a forgotten
+    environment variable into a fully working API whose tokens anyone reading
+    this repository can forge, and nothing about the running system would look
+    wrong. Failing here means the mistake is visible at the first start rather
+    than after the first breach.
+
+    Raises:
+        RuntimeError: The variable is unset, blank, too short, or one of the
+            placeholder values published in this repository.
+    """
+    raw = os.getenv("SECRET_KEY", "").strip()
+
+    if not raw:
+        raise RuntimeError(f"SECRET_KEY is not set. {_KEY_HELP}")
+
+    if raw in PUBLISHED_PLACEHOLDER_KEYS:
+        raise RuntimeError(
+            f"SECRET_KEY is set to {raw!r}, a placeholder published in this "
+            f"repository. Anyone can forge a token with it. {_KEY_HELP}"
+        )
+
+    if len(raw) < MINIMUM_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY is {len(raw)} characters, below the "
+            f"{MINIMUM_SECRET_KEY_LENGTH} required. {_KEY_HELP}"
+        )
+
+    return raw
+
+
+SECRET_KEY = _read_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
 
