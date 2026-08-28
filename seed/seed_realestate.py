@@ -13,6 +13,8 @@ import asyncio
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import bcrypt
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 import numpy as np
 from seed.constants import *
@@ -247,6 +249,39 @@ def generate_market_indices(num_quarters: int, start_year: int, start_quarter: i
     return indices
 
 
+# The account the seed advertises. These are demonstration credentials for a
+# database that is dropped and rebuilt on every run, so they live in the source
+# on purpose; the seed prints them at the end of a run.
+DEMO_USERNAME = "demo"
+DEMO_PASSWORD = "demo123"
+DEMO_EMAIL = "demo@realestate.be"
+
+
+async def create_demo_user(db) -> ObjectId:
+    """Insert the demo account and return its id.
+
+    The password goes under ``hashedPassword``, which is the field
+    ``authenticate_user`` reads. Writing it anywhere else produces an account
+    that exists, is advertised, and cannot log in.
+
+    The account carries the admin role because the seed exists to show the
+    application, and the property and renovation catalogs are part of it.
+    """
+    hashed_password = bcrypt.hashpw(
+        DEMO_PASSWORD.encode('utf-8'), bcrypt.gensalt()
+    ).decode('utf-8')
+
+    result = await db.users.insert_one({
+        "username": DEMO_USERNAME,
+        "email": DEMO_EMAIL,
+        "name": "Demo User",
+        "hashedPassword": hashed_password,
+        "roles": ["user", "admin"],
+        "createdAt": datetime.utcnow()
+    })
+    return result.inserted_id
+
+
 async def seed_database():
     """Main seed function"""
     print("🌱 Starting seed process...")
@@ -272,21 +307,9 @@ async def seed_database():
     
     # 1. Create demo user with password
     print("👤 Creating demo user...")
-    # Import password hashing
-    import bcrypt
-    
-    password_hash = bcrypt.hashpw("demo123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
-    user = {
-        "username": "demo",
-        "email": "demo@realestate.be",
-        "name": "Demo User",
-        "password_hash": password_hash,
-        "createdAt": datetime.utcnow()
-    }
-    user_result = await db.users.insert_one(user)
-    user_id = user_result.inserted_id
-    print(f"   ✓ User created: {user_id} (username: demo, password: demo123)")
+    user_id = await create_demo_user(db)
+    print(f"   ✓ User created: {user_id} "
+          f"(username: {DEMO_USERNAME}, password: {DEMO_PASSWORD})")
     
     # 2. Generate properties
     print(f"🏠 Generating {NUM_PROPERTIES} properties...")

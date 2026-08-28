@@ -144,6 +144,7 @@ Authentication and authorization.
   "name": str,
   "hashedPassword": str,
   "cashBalance": float,
+  "roles": list[str],
   "createdAt": datetime
 }
 ```

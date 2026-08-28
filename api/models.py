@@ -46,13 +46,19 @@ ObjectIdStr = Annotated[str, AfterValidator(_must_look_like_an_object_id)]
 
 
 class User(BaseModel):
-    """User entity"""
+    """User entity, as it is stored.
+
+    The field names here are the field names in the documents: this model is
+    what a reader consults to know what a user looks like, so a name that does
+    not match the collection is worse than no model at all. ``hashedPassword``
+    in particular is the field ``authenticate_user`` reads.
+    """
     id: Optional[PyObjectId] = Field(default=None, alias="_id")
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     name: str
-    password_hash: str  # Hashed password
-    roles: List[str] = ["user"]
+    hashedPassword: str  # bcrypt hash, never the password itself
+    roles: List[str] = Field(default_factory=lambda: ["user"])
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
