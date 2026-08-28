@@ -94,13 +94,20 @@ routers/
 ## game.py
 
 **Endpoints:**
-- `GET /game/quarter` - Current game quarter
-- `POST /game/advance` - Move to the next quarter
-- `POST /game/renovate` - Apply a renovation
+- `GET /game/renovations` - Renovation catalog
+- `GET /game/current-quarter` - Current game quarter
+- `POST /game/renovate` - Start a renovation on one of your holdings
+- `POST /game/advance-quarter` - Move to the next quarter (**admin only**)
+
+**Access:**
+- `/game/renovate` checks ownership per resource: the holding must belong to
+  the caller's portfolio, or the answer is 403
+- `/game/advance-quarter` requires the `admin` role, because it moves the world
+  for every player at once
 
 **Game mechanics:**
-- Progression by quarters (2024-Q1 to 2028-Q4)
-- Manual advancement by the user
+- Progression by quarters
+- Advancement triggered by an administrator
 - Update of market indices
 - Recalculation of all prices
 
@@ -137,8 +144,13 @@ routers/
 - `GET /admin/trades` - History of all transactions
 
 **Access:**
-- All authenticated users can use these endpoints
-- No roles system
+- Restricted to accounts carrying the `admin` role, enforced by `require_admin`
+  declared on the router itself, so a new endpoint under `/admin` is refused to
+  ordinary players by default
+- A valid token is not enough: an ordinary player gets 403, a missing or
+  invalid token gets 401
+- Roles are assigned by the server at registration (`["user"]`) and are never
+  read from a request body
 
 **Validation:**
 - Pydantic schemas for each request

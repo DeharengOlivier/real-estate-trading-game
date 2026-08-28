@@ -177,3 +177,72 @@ async def test_user_and_token():
         "password": password,
         "user_id": user_id,
     }, token, headers
+
+
+@pytest_asyncio.fixture
+async def ordinary_user_and_token():
+    """Create a player with no admin role and return creds + JWT headers.
+
+    This is the fixture every negative permission test uses: a perfectly valid,
+    fully authenticated account that simply has no business touching the admin
+    surface. Authentication and authorization are different questions, and only
+    a user like this one can tell them apart.
+    """
+    db = database.get_database()
+
+    password = "PlayerPassword123"
+    result = await db.users.insert_one({
+        "username": "player",
+        "email": "player@example.com",
+        "name": "Ordinary Player",
+        "hashedPassword": get_password_hash(password),
+        "roles": ["user"],
+        "createdAt": datetime.utcnow(),
+    })
+    user_id = result.inserted_id
+
+    await db.portfolios.insert_one({
+        "userId": user_id,
+        "cash": 1000000.0,
+        "createdAt": datetime.utcnow(),
+    })
+
+    token = create_access_token(data={"sub": str(user_id)})
+    return (
+        {"username": "player", "password": password, "user_id": user_id},
+        token,
+        {"Authorization": f"Bearer {token}"},
+    )
+
+
+@pytest_asyncio.fixture
+async def legacy_user_and_token():
+    """Create a user document with no ``roles`` key at all.
+
+    Accounts created before the role field existed have no ``roles``. They must
+    be treated as ordinary players, never as admins: a missing permission is an
+    absent permission, not a wildcard.
+    """
+    db = database.get_database()
+
+    result = await db.users.insert_one({
+        "username": "legacy",
+        "email": "legacy@example.com",
+        "name": "Legacy User",
+        "hashedPassword": get_password_hash("LegacyPassword123"),
+        "createdAt": datetime.utcnow(),
+    })
+    user_id = result.inserted_id
+
+    await db.portfolios.insert_one({
+        "userId": user_id,
+        "cash": 1000000.0,
+        "createdAt": datetime.utcnow(),
+    })
+
+    token = create_access_token(data={"sub": str(user_id)})
+    return (
+        {"username": "legacy", "user_id": user_id},
+        token,
+        {"Authorization": f"Bearer {token}"},
+    )

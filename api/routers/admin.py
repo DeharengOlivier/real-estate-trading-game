@@ -1,6 +1,15 @@
 """
 Admin router - Administrative operations for properties, renovations, and trades
-Single Responsibility: CRUD operations and monitoring (accessible to all authenticated users)
+Single Responsibility: CRUD operations and monitoring, restricted to administrators.
+
+Everything under this prefix either rewrites the shared world (the property and
+renovation catalogs decide the market every player trades in) or reads across
+every player's data. None of it is a player-facing operation, so the gate is
+declared once on the router: an endpoint added here is refused to ordinary
+players by default, rather than by remembering to add a decorator.
+
+Handlers still take ``current_user`` where they need to know who acted; that
+dependency answers identity, while the router-level one answers entitlement.
 """
 from fastapi import APIRouter, HTTPException, Depends, status
 from bson import ObjectId
@@ -9,11 +18,15 @@ import logging
 
 from api.database import get_database
 from api.models import Property, Renovation
-from api.auth import get_current_user
+from api.auth import get_current_user, require_admin
 from api.services import get_current_quarter, compute_property_price
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/admin", tags=["Administration"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["Administration"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 # ==================== PROPERTIES ====================

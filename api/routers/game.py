@@ -9,7 +9,7 @@ import logging
 
 from api.database import get_database
 from api.models import RenovateRequest
-from api.auth import get_current_user
+from api.auth import get_current_user, require_admin
 from api.services import (
     get_current_quarter, add_quarters,
     apply_renovation_delta, compute_property_price,
@@ -119,9 +119,14 @@ async def start_renovation(request: RenovateRequest, current_user: dict = Depend
 
 
 @router.post("/advance-quarter")
-async def advance_quarter(current_user: dict = Depends(get_current_user)):
+async def advance_quarter(current_user: dict = Depends(require_admin)):
     """
     Advance game time by one quarter
+
+    Restricted to administrators: this is the only endpoint that moves the
+    world for everybody at once. A single player calling it would fast-forward
+    every other player's game, and calling it in a loop would run the whole
+    simulation out.
     
     Actions performed:
     1. Generate or retrieve market data for next quarter

@@ -13,7 +13,7 @@ from api.database import get_database, get_redis_client
 from api.models import UserRegister, UserLogin, Token
 from api.auth import (
     create_access_token, get_password_hash, authenticate_user,
-    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES
+    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, DEFAULT_ROLES
 )
 
 logger = logging.getLogger(__name__)
@@ -140,12 +140,16 @@ async def register(user_data: UserRegister):
     hashed_password = get_password_hash(user_data.password)
     
     # Create user document
+    # The role is decided here, by the server, and never read from the request
+    # body: a registration payload carrying "roles" is ignored by UserRegister,
+    # which has no such field.
     user_doc = {
         "username": user_data.username,
         "email": user_data.email,
         "name": user_data.name,
         "hashedPassword": hashed_password,
         "cashBalance": 1000000.0,  # Starting cash
+        "roles": list(DEFAULT_ROLES),
         "createdAt": datetime.utcnow()
     }
     
@@ -177,7 +181,7 @@ async def register(user_data: UserRegister):
             "email": user_data.email,
             "name": user_data.name,
             "cashBalance": 1000000.0,
-            "roles": ["user"]
+            "roles": list(DEFAULT_ROLES)
         }
     }
 
@@ -216,7 +220,7 @@ async def login(user_data: UserLogin):
             "email": user.get("email", ""),
             "name": user.get("name", ""),
             "cashBalance": user.get("cashBalance", 0),
-            "roles": user.get("roles", ["user"])
+            "roles": user.get("roles", list(DEFAULT_ROLES))
         }
     }
 
@@ -236,5 +240,5 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         "id": str(current_user["_id"]),
         "username": current_user["username"],
         "cashBalance": current_user.get("cashBalance", 0),
-        "roles": current_user.get("roles", ["user"])
+        "roles": current_user.get("roles", list(DEFAULT_ROLES))
     }
