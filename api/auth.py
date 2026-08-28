@@ -59,8 +59,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     This answers "who is calling", and nothing else. Entitlement is a separate
     question, asked by :func:`require_admin`.
 
-    Every way the token can be wrong (bad signature, expired, no subject, an
-    account that no longer exists) is the same answer to the caller: 401.
+    Every way the token can be wrong (bad signature, expired, no subject, a
+    subject that is not an object id, an account that no longer exists) is the
+    same answer to the caller: 401. In particular the subject is parsed before
+    it reaches the database, because ``ObjectId("not-an-id")`` raises
+    ``InvalidId`` and an unguarded parse turns a bad credential into a 500.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -75,6 +78,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if user_id is None:
             raise credentials_exception
     except JWTError:
+        raise credentials_exception
+
+    if not ObjectId.is_valid(user_id):
         raise credentials_exception
 
     db = get_database()

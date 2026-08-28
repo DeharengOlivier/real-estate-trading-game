@@ -17,6 +17,7 @@ from typing import List
 import logging
 
 from api.database import get_database
+from api.identifiers import parse_object_id
 from api.models import Property, Renovation
 from api.auth import get_current_user, require_admin
 from api.services import get_current_quarter, compute_property_price
@@ -98,10 +99,7 @@ async def get_property_by_id(
     """Get detailed property information by ID (available to all authenticated users)"""
     db = get_database()
     
-    try:
-        prop_id = ObjectId(property_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid property ID")
+    prop_id = parse_object_id(property_id, "property ID")
     
     prop = await db.properties.find_one({"_id": prop_id})
     if not prop:
@@ -129,10 +127,7 @@ async def update_property(
     """Update property characteristics (available to all authenticated users)"""
     db = get_database()
     
-    try:
-        prop_id = ObjectId(property_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid property ID")
+    prop_id = parse_object_id(property_id, "property ID")
     
     prop_dict = property_data.model_dump(exclude={"id"})
     
@@ -156,10 +151,7 @@ async def delete_property(
     """Delete a property (only if not owned) - available to all authenticated users"""
     db = get_database()
     
-    try:
-        prop_id = ObjectId(property_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid property ID")
+    prop_id = parse_object_id(property_id, "property ID")
     
     # Check if property is in use
     holding = await db.holdings.find_one({"propertyId": prop_id})

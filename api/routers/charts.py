@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 
 from api.database import get_database
+from api.identifiers import parse_object_id
 from api.auth import get_current_user
 from api.services import (
     get_current_quarter,
@@ -222,10 +223,7 @@ async def get_property_price_chart(property_id: str, current_user: dict = Depend
     """
     db = get_database()
     
-    try:
-        prop_id = ObjectId(property_id)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid property ID")
+    prop_id = parse_object_id(property_id, "property ID")
     
     # Get property
     property_data = await db.properties.find_one({"_id": prop_id})

@@ -2,9 +2,10 @@
 Pydantic models for Real Estate Simulation
 Validation for all MongoDB entities
 """
-from typing import Optional, List, Literal
+from typing import Annotated, Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic.functional_validators import AfterValidator
 from bson import ObjectId
 
 
@@ -23,6 +24,25 @@ class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_json_schema__(cls, field_schema):
         field_schema.update(type="string")
+
+
+def _must_look_like_an_object_id(value: str) -> str:
+    """Reject anything ``ObjectId()`` would refuse, at the request boundary.
+
+    ``ObjectId("not-an-id")`` raises ``bson.errors.InvalidId``. Raised inside a
+    handler that exception escapes to the global handler and the caller gets a
+    500, which reports a server fault for what is plainly a bad request. Parsed
+    here it is a 422 with the offending field named, and every handler past
+    this point can construct an ObjectId without a guard.
+    """
+    if not ObjectId.is_valid(value):
+        raise ValueError("must be a 24-character hexadecimal object id")
+    return value
+
+
+# A string that is known to be a valid object id. Use this, never a bare `str`,
+# for any identifier arriving from a request.
+ObjectIdStr = Annotated[str, AfterValidator(_must_look_like_an_object_id)]
 
 
 class User(BaseModel):
@@ -226,17 +246,17 @@ class PriceHistory(BaseModel):
 # Request/Response models
 class BuyRequest(BaseModel):
     """Request to buy a property"""
-    propertyId: str
+    propertyId: ObjectIdStr
 
 
 class SellRequest(BaseModel):
     """Request to sell a property"""
-    propertyId: str
+    propertyId: ObjectIdStr
 
 
 class RenovateRequest(BaseModel):
     """Request to start a renovation"""
-    holdingId: str
+    holdingId: ObjectIdStr
     renoCode: str
 
 
