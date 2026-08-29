@@ -4,6 +4,7 @@ Single Responsibility: Game progression and renovation management
 """
 from fastapi import APIRouter, HTTPException, Depends
 from bson import ObjectId
+from pymongo import UpdateOne
 from typing import List
 import logging
 
@@ -149,45 +150,77 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
         # Generate new market data dynamically
         next_market = await generate_next_market_quarter(db, current_t)
     
-    # Complete renovations that end at or before next quarter
-    holdings = await db.holdings.find().to_list(length=None)
-    
+    # Complete renovations that end at or before next quarter.
+    # Only holdings that actually have an ongoing work due are read: the rest
+    # of the table has nothing to contribute and does not need to travel.
+    holdings = await db.holdings.find({
+        "works": {"$elemMatch": {"status": "ongoing", "endT": {"$lte": next_t}}}
+    }).to_list(length=None)
+
     completed_count = 0
-    for holding in holdings:
-        property_id = holding['propertyId']
-        works = holding.get('works', [])
-        
-        updated = False
-        for work in works:
-            if work['status'] == 'ongoing' and work['endT'] <= next_t:
-                # Complete this work
+    holding_updates = []
+    property_updates = []
+
+    if holdings:
+        # The renovations and the properties the works refer to, read once each
+        # rather than once per work.
+        renovation_ids = {
+            work['renoId']
+            for holding in holdings
+            for work in holding.get('works', [])
+            if work['status'] == 'ongoing' and work['endT'] <= next_t
+        }
+        renovations = await db.renovations.find(
+            {"_id": {"$in": list(renovation_ids)}}
+        ).to_list(length=None)
+        renovations_by_id = {reno['_id']: reno for reno in renovations}
+
+        property_ids = list({holding['propertyId'] for holding in holdings})
+        properties_being_renovated = await db.properties.find(
+            {"_id": {"$in": property_ids}}
+        ).to_list(length=None)
+        # Deltas from several completed works accumulate on the same property,
+        # so each one is applied to the running copy, not to what was read.
+        renovated_by_id = {
+            prop['_id']: dict(prop) for prop in properties_being_renovated
+        }
+
+        for holding in holdings:
+            property_id = holding['propertyId']
+            works = holding.get('works', [])
+
+            updated = False
+            for work in works:
+                if work['status'] != 'ongoing' or work['endT'] > next_t:
+                    continue
+
                 work['status'] = 'completed'
                 updated = True
                 completed_count += 1
-                
-                # Apply renovation deltas to property
-                renovation = await db.renovations.find_one({"_id": work['renoId']})
-                if renovation:
-                    property_data = await db.properties.find_one({"_id": property_id})
-                    if property_data:
-                        updated_prop = apply_renovation_delta(dict(property_data), renovation['delta'])
-                        
-                        await db.properties.update_one(
-                            {"_id": property_id},
-                            {"$set": {
-                                "epc": updated_prop['epc'],
-                                "state": updated_prop['state'],
-                                "kitchen": updated_prop['kitchen'],
-                                "bath": updated_prop['bath'],
-                                "surface": updated_prop['surface']
-                            }}
-                        )
-        
-        if updated:
-            await db.holdings.update_one(
-                {"_id": holding['_id']},
-                {"$set": {"works": works}}
-            )
+
+                renovation = renovations_by_id.get(work['renoId'])
+                property_data = renovated_by_id.get(property_id)
+                if renovation and property_data:
+                    renovated_by_id[property_id] = apply_renovation_delta(
+                        property_data, renovation['delta']
+                    )
+
+            if updated:
+                holding_updates.append(UpdateOne(
+                    {"_id": holding['_id']}, {"$set": {"works": works}}
+                ))
+                property_updates.append(UpdateOne(
+                    {"_id": property_id},
+                    {"$set": {
+                        field: renovated_by_id[property_id][field]
+                        for field in ("epc", "state", "kitchen", "bath", "surface")
+                    }}
+                ))
+
+    if holding_updates:
+        await db.holdings.bulk_write(holding_updates)
+    if property_updates:
+        await db.properties.bulk_write(property_updates)
     
     # Recalculate prices for all properties at next quarter
     properties = await db.properties.find().to_list(length=None)
@@ -205,15 +238,20 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
     if price_updates:
         await db.pricehistory.insert_many(price_updates)
     
-    # Update listings with new prices
-    for price_update in price_updates:
-        await db.listings.update_one(
-            {"propertyId": price_update['propertyId']},
-            {"$set": {
-                "lastComputedPrice": price_update['price'],
-                "lastT": next_t
-            }}
-        )
+    # Update listings with new prices. Each listing gets a different price, so
+    # this cannot be one update; bulk_write makes it one round trip instead of
+    # one per property.
+    if price_updates:
+        await db.listings.bulk_write([
+            UpdateOne(
+                {"propertyId": price_update['propertyId']},
+                {"$set": {
+                    "lastComputedPrice": price_update['price'],
+                    "lastT": next_t
+                }}
+            )
+            for price_update in price_updates
+        ])
     
     logger.info(f"Advanced from {current_t} to {next_t}: {len(price_updates)} properties updated, {completed_count} renovations completed")
     
