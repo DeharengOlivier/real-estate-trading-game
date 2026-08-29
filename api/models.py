@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pydantic.functional_validators import AfterValidator
 
 from api.clock import utc_now
+from simulation.constants import ZONES
 
 
 class PyObjectId(ObjectId):
@@ -62,6 +63,26 @@ def _must_look_like_an_object_id(value: str) -> str:
 # A string that is known to be a valid object id. Use this, never a bare `str`,
 # for any identifier arriving from a request.
 ObjectIdStr = Annotated[str, AfterValidator(_must_look_like_an_object_id)]
+
+
+def _must_be_a_known_zone(value: str) -> str:
+    """Reject a zone the simulation has no numbers for.
+
+    Every zone in ``ZONES`` has a base price per square metre, an appreciation
+    trend and a local index. A zone outside that list cannot be priced at all,
+    so accepting one only defers the failure to the first time somebody asks
+    what the property is worth.
+
+    Checked against the list rather than repeated as a ``Literal`` so the
+    zones are named in exactly one place.
+    """
+    if value not in ZONES:
+        raise ValueError(f"must be one of the known zones: {', '.join(ZONES)}")
+    return value
+
+
+# A zone the simulation can price. Use this, never a bare `str`.
+Zone = Annotated[str, AfterValidator(_must_be_a_known_zone)]
 
 
 class User(BaseModel):
@@ -147,6 +168,30 @@ class Property(BaseModel):
     createdAt: datetime = Field(default_factory=utc_now)
 
     model_config = DOCUMENT_MODEL_CONFIG
+
+
+class PropertyCreate(BaseModel):
+    """What a caller may say when creating a property.
+
+    Deliberately not the same shape as :class:`Property`: `base_ppm` is absent.
+    The base price per square metre decides every future price of the property,
+    so it is derived server-side from the zone and type table rather than
+    accepted from whoever is calling. The zone is a closed set for the same
+    reason: a zone outside the table has no base price, no appreciation trend
+    and no local index, and would be priced from whatever arrived in the body.
+    """
+
+    zone: Zone
+    type: Literal["house", "apartment"]
+    surface: float = Field(gt=0)
+    epc: float = Field(ge=0, le=1)
+    state: float = Field(ge=0, le=1)
+    kitchen: float = Field(ge=0, le=1)
+    bath: float = Field(ge=0, le=1)
+
+    # An unexpected field is a caller trying to set something it does not own,
+    # most likely base_ppm. Refuse it rather than ignore it.
+    model_config = ConfigDict(extra="forbid")
 
 
 class LocalIndex(BaseModel):

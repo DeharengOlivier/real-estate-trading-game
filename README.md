@@ -358,8 +358,6 @@ An honest list of what is still true.
   domain layer, so they can only be tested through HTTP.
 - **Deep pagination is page-based** and degrades on a large catalogue. Fine for
   300 properties, wrong for 300 000.
-- **`base_ppm` on admin property creation is supplied by the client.** It should
-  be derived server-side from the zone and type table.
 
 ## Academic Project
 

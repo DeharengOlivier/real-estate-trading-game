@@ -107,28 +107,14 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
 
   const handleCreate = async () => {
     try {
-      // Base PPM values for each zone and type (from constants)
-      const basePPM = {
-        'Bruxelles-Centre': { apartment: 4200, house: 3800 },
-        'Ixelles': { apartment: 3800, house: 3500 },
-        'Uccle': { apartment: 3500, house: 3200 },
-        'Schaerbeek': { apartment: 2800, house: 2600 },
-        'Liège-Centre': { apartment: 2400, house: 2200 },
-        'Liège-Sud': { apartment: 2100, house: 1900 },
-        'Namur-Est': { apartment: 2300, house: 2100 },
-        'Namur-Centre': { apartment: 2500, house: 2300 },
-        'Gand-Centre': { apartment: 3000, house: 2800 },
-        'Anvers-Nord': { apartment: 2900, house: 2700 },
-        'Anvers-Sud': { apartment: 3200, house: 3000 },
-        'Charleroi-Ville': { apartment: 1800, house: 1600 }
-      }
-
-      // Generate random characteristics (0.0 to 1.0)
+      // The base price per m2 is the server's to decide, from its own zone and
+      // type table. This component used to carry a copy of that table and send
+      // the value; the copy had drifted, quoting a house below an apartment in
+      // every zone where the simulation puts it above.
       const propertyData = {
         zone: newProperty.zone,
         type: newProperty.type,
         surface: parseFloat(newProperty.surface),
-        base_ppm: basePPM[newProperty.zone][newProperty.type],
         epc: Math.random() * 0.5 + 0.3,        // 0.3 to 0.8
         state: Math.random() * 0.5 + 0.3,      // 0.3 to 0.8
         kitchen: Math.random() * 0.5 + 0.3,    // 0.3 to 0.8

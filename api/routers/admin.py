@@ -17,10 +17,12 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.auth import get_current_user, require_admin
+from api.clock import utc_now
 from api.database import get_database
 from api.identifiers import parse_object_id
-from api.models import Property, Renovation
+from api.models import PropertyCreate, Renovation
 from api.services import compute_property_price, get_current_quarter
+from simulation.constants import BASE_PPM
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -34,16 +36,21 @@ router = APIRouter(
 
 
 @router.post("/properties", status_code=status.HTTP_201_CREATED)
-async def create_property(property_data: Property, current_user: dict = Depends(get_current_user)):
+async def create_property(
+    property_data: PropertyCreate, current_user: dict = Depends(get_current_user)
+):
     """
-    Create a new property
+    Create a new property, and list it at a price computed from the market.
 
-    Also creates a listing for the property with computed price
-    Available to all authenticated users
+    The base price per square metre is read from the zone and type table, not
+    from the request: it decides every future price of this property, so it is
+    not the caller's to choose. Admin only, like the rest of this router.
     """
     db = get_database()
 
-    prop_dict = property_data.model_dump(exclude={"id"})
+    prop_dict = property_data.model_dump()
+    prop_dict["base_ppm"] = BASE_PPM[property_data.zone][property_data.type]
+    prop_dict["createdAt"] = utc_now()
     result = await db.properties.insert_one(prop_dict)
 
     # Create listing for this property
@@ -115,14 +122,20 @@ async def get_property_by_id(property_id: str, current_user: dict = Depends(get_
 
 @router.put("/properties/{property_id}")
 async def update_property(
-    property_id: str, property_data: Property, current_user: dict = Depends(get_current_user)
+    property_id: str, property_data: PropertyCreate, current_user: dict = Depends(get_current_user)
 ):
-    """Update property characteristics (available to all authenticated users)"""
+    """Replace a property's characteristics. Admin only, like the rest of this router.
+
+    Takes the same shape as creation, and for the same reason: the base price
+    per square metre is re-derived from the new zone and type rather than taken
+    from the request, so an update cannot rewrite the economics either.
+    """
     db = get_database()
 
     prop_id = parse_object_id(property_id, "property ID")
 
-    prop_dict = property_data.model_dump(exclude={"id"})
+    prop_dict = property_data.model_dump()
+    prop_dict["base_ppm"] = BASE_PPM[property_data.zone][property_data.type]
 
     result = await db.properties.update_one({"_id": prop_id}, {"$set": prop_dict})
 

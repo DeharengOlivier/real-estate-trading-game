@@ -37,7 +37,6 @@ ADMIN_ENDPOINTS = [
             "state": 0.7,
             "kitchen": 0.6,
             "bath": 0.6,
-            "base_ppm": 3000,
         },
     ),
     ("get", "/admin/properties", None),
@@ -114,7 +113,6 @@ async def test_an_admin_still_gets_through(test_user_and_token):
                 "state": 0.7,
                 "kitchen": 0.6,
                 "bath": 0.6,
-                "base_ppm": 3000,
             },
         )
 
@@ -390,7 +388,6 @@ async def test_a_player_cannot_renovate_somebody_elses_property(
             "state": 0.5,
             "kitchen": 0.5,
             "bath": 0.5,
-            "base_ppm": 3000,
         }
     )
     holding = await db.holdings.insert_one(
@@ -439,7 +436,6 @@ async def test_the_owner_can_renovate_their_own_property(test_user_and_token):
             "state": 0.5,
             "kitchen": 0.5,
             "bath": 0.5,
-            "base_ppm": 3000,
         }
     )
     holding = await db.holdings.insert_one(

@@ -26,7 +26,6 @@ async def test_create_property(test_user_and_token):
                 "state": 0.7,
                 "kitchen": 0.6,
                 "bath": 0.6,
-                "base_ppm": 3000,
             },
         )
 
@@ -37,7 +36,7 @@ async def test_create_property(test_user_and_token):
 
 @pytest.mark.asyncio
 async def test_create_property_invalid_data(test_user_and_token):
-    """Test creating property with invalid data fails"""
+    """An unknown zone, an unknown type and a negative surface are all refused."""
     user_data, token, headers = test_user_and_token
 
     async with api_client() as client:
@@ -77,7 +76,6 @@ async def test_get_all_properties(test_user_and_token):
                 "state": 0.6,
                 "kitchen": 0.6,
                 "bath": 0.6,
-                "base_ppm": 4200,
             },
         )
 
@@ -107,7 +105,6 @@ async def test_get_property_by_id(test_user_and_token):
                 "state": 0.7,
                 "kitchen": 0.6,
                 "bath": 0.6,
-                "base_ppm": 4800,
             },
         )
         property_id = create_response.json()["id"]
@@ -151,7 +148,6 @@ async def test_update_property(test_user_and_token):
                 "state": 0.6,
                 "kitchen": 0.5,
                 "bath": 0.5,
-                "base_ppm": 2800,
             },
         )
         property_id = create_response.json()["id"]
@@ -168,7 +164,6 @@ async def test_update_property(test_user_and_token):
                 "state": 0.8,
                 "kitchen": 0.7,
                 "bath": 0.7,
-                "base_ppm": 3200,
             },
         )
 
@@ -195,7 +190,6 @@ async def test_delete_property(test_user_and_token):
                 "state": 0.6,
                 "kitchen": 0.5,
                 "bath": 0.5,
-                "base_ppm": 2500,
             },
         )
         property_id = create_response.json()["id"]
