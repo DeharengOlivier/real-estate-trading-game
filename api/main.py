@@ -21,14 +21,21 @@ from api.database import (
     connect_to_mongo,
     connect_to_redis,
 )
+from api.observability import (
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    configure_logging,
+    current_request_id,
+    reset_request_id,
+    sanitize_request_id,
+)
 
 # Import routers
 from api.routers import admin, auth, charts, game, health, portfolio, trading
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+# Every log line carries the id of the request being handled; see
+# api/observability.py.
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
@@ -78,38 +85,63 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    """Give the request an id, log what happened to it, hand the id back.
+
+    The id is what makes a reported failure findable: it is on every log line
+    emitted while this request is handled, and it is in the response, so the
+    string in a bug report is the string to search for.
     """
-    Request logging middleware
-    Logs all HTTP requests with timing information
-    """
-    start_time = time.time()
+    request_id = sanitize_request_id(request.headers.get(REQUEST_ID_HEADER))
+    token = bind_request_id(request_id)
+    start_time = time.perf_counter()
 
     try:
         response = await call_next(request)
-        process_time = time.time() - start_time
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
 
+        # Key=value rather than a sentence: these lines get counted and
+        # filtered far more often than they get read.
         logger.info(
-            f"{request.method} {request.url.path} "
-            f"completed in {process_time:.3f}s with status {response.status_code}"
+            "request method=%s path=%s status=%s duration_ms=%.1f",
+            request.method,
+            request.url.path,
+            response.status_code,
+            elapsed_ms,
         )
-
+        response.headers[REQUEST_ID_HEADER] = request_id
         return response
-    except Exception as e:
-        process_time = time.time() - start_time
-        logger.error(f"Request failed after {process_time:.3f}s: {e!s}")
+    except Exception:
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+        logger.exception(
+            "request method=%s path=%s status=failed duration_ms=%.1f",
+            request.method,
+            request.url.path,
+            elapsed_ms,
+        )
         raise
+    finally:
+        reset_request_id(token)
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    """Answer an unhandled failure with something the caller can quote.
+
+    The message stays generic on purpose, since an exception string can carry
+    internals. The request id does not: it is the handle that connects this
+    answer to the traceback in the logs.
     """
-    Global exception handler
-    Catches unhandled exceptions and returns consistent error response
-    """
-    logger.error(f"Unhandled exception: {exc!s}", exc_info=True)
+    request_id = current_request_id()
+    logger.exception("unhandled path=%s", request.url.path)
 
     return JSONResponse(
-        status_code=500, content={"detail": "Internal server error", "type": "server_error"}
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "type": "server_error",
+            "requestId": request_id,
+        },
+        headers={REQUEST_ID_HEADER: request_id},
     )
 
 

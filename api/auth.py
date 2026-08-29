@@ -3,6 +3,7 @@ Authentication utilities for Real Estate Simulation
 Simple JWT-based authentication
 """
 
+import logging
 import os
 from datetime import timedelta
 
@@ -14,6 +15,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from api.clock import utc_now
 from api.database import get_database
+from api.observability import log_security_event
+
+logger = logging.getLogger(__name__)
 
 # Configuration
 # HS256 signs with the key itself, so the key is the whole secret: anyone
@@ -176,6 +180,16 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     holds a perfectly valid token.
     """
     if not has_role(current_user, ADMIN_ROLE):
+        # One of these is a misconfigured client; a hundred is somebody trying
+        # doors. Neither can be told apart from nothing at all if it is not
+        # written down.
+        log_security_event(
+            logger,
+            "authorization_refused",
+            username=current_user.get("username"),
+            user_id=current_user.get("_id"),
+            required_role=ADMIN_ROLE,
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="This operation requires the admin role",

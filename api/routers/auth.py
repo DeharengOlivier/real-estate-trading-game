@@ -23,6 +23,7 @@ from api.auth import (
 from api.clock import utc_now
 from api.database import get_database, get_redis_client
 from api.models import Token, UserLogin, UserRegister
+from api.observability import log_security_event
 from simulation.constants import INITIAL_CASH
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ async def check_rate_limit(username: str) -> bool:
         fallback_login_attempts[username] = attempts
 
         if len(attempts) > LOGIN_ATTEMPT_LIMIT:
+            log_security_event(logger, "rate_limit_reached", username=username, store="memory")
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many login attempts. Try again in 5 minutes.",
@@ -82,6 +84,7 @@ async def check_rate_limit(username: str) -> bool:
     attempt_count = results[-1]
 
     if attempt_count > LOGIN_ATTEMPT_LIMIT:
+        log_security_event(logger, "rate_limit_reached", username=username, store="redis")
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many login attempts. Try again in 5 minutes.",
@@ -210,6 +213,9 @@ async def login(user_data: UserLogin):
     user = await authenticate_user(user_data.username, user_data.password)
 
     if not user:
+        # Both halves of a wrong login land here, on purpose: telling the
+        # caller which one was wrong tells them which usernames exist.
+        log_security_event(logger, "authentication_failed", username=user_data.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
