@@ -48,6 +48,15 @@ async def register(client, base_url, username):
             "password": PASSWORD,
         },
     )
+    if response.status_code == 429:
+        # Registration is limited per calling address, so several runs in a row
+        # against one stack use the hour's budget up. That is the limiter
+        # working, not a broken guard, and it should not read like one.
+        raise SmokeFailure(
+            "registration is rate limited for this address, which is the limiter doing "
+            "its job after several runs. Start from a clean stack "
+            "(docker compose down -v && docker compose up -d) or wait out the window."
+        )
     check(response.status_code == 201, f"register {username}: {response.text}")
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
