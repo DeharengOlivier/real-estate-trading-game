@@ -171,6 +171,62 @@ async def get_property_current_price(db, property_id: ObjectId, current_t: str) 
     return compute_property_price(property_data, market_index)
 
 
+async def get_property_current_prices(
+    db, property_ids: List[ObjectId], current_t: str
+) -> Dict[ObjectId, float]:
+    """Current price of several properties, in a bounded number of queries.
+
+    Same answer as calling :func:`get_property_current_price` once per id, at a
+    cost that does not grow with the list: one read of the price history for
+    the whole set, then, only for the ids the history does not cover, one read
+    of the properties and one of the market index.
+
+    Complexity: 1 to 3 round trips and O(n) work in memory, for any n. The
+    per-id version issues 1 to 3 round trips *each*, which is what made the
+    portfolio pages cost more the more a player owned.
+
+    Args:
+        db: The database handle.
+        property_ids: The properties to price. Duplicates are harmless.
+        current_t: The quarter to price them at.
+
+    Returns:
+        A price per id. An id that can be neither read nor computed maps to 0,
+        matching the single-property helper.
+    """
+    unique_ids = list(dict.fromkeys(property_ids))
+    if not unique_ids:
+        return {}
+
+    prices: Dict[ObjectId, float] = {}
+
+    history = await db.pricehistory.find({
+        "propertyId": {"$in": unique_ids},
+        "t": current_t
+    }).to_list(length=None)
+    for record in history:
+        prices[record['propertyId']] = record['price']
+
+    missing = [pid for pid in unique_ids if pid not in prices]
+    if not missing:
+        return prices
+
+    market_index = await db.marketindex.find_one({"t": current_t})
+    properties = await db.properties.find(
+        {"_id": {"$in": missing}}
+    ).to_list(length=None)
+
+    by_id = {prop['_id']: prop for prop in properties}
+    for property_id in missing:
+        property_data = by_id.get(property_id)
+        if not property_data or not market_index:
+            prices[property_id] = 0
+        else:
+            prices[property_id] = compute_property_price(property_data, market_index)
+
+    return prices
+
+
 async def generate_next_market_quarter(db, current_t: str) -> Dict:
     """
     Generate market data for the next quarter based on the previous quarter

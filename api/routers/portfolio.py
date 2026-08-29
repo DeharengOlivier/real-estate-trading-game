@@ -10,7 +10,13 @@ import logging
 from api.database import get_database
 from api.models import PortfolioSummary, HoldingDetail
 from api.auth import get_current_user
-from api.services import get_current_quarter, get_property_current_price, parse_quarter_string
+from api.services import (
+    get_current_quarter,
+    get_property_current_price,
+    get_property_current_prices,
+    parse_quarter_string,
+)
+from seed.constants import INITIAL_CASH
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
@@ -48,8 +54,8 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     portfolio_id = portfolio['_id']
     cash = portfolio['cash']
     
-    # Initial capital (starting amount granted to every new account)
-    INITIAL_CAPITAL = 1000000.0
+    # The amount every new account starts with, named once in seed.constants.
+    INITIAL_CAPITAL = float(INITIAL_CASH)
     
     # Get current quarter
     current_t = await get_current_quarter(db)
@@ -57,95 +63,55 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     # Get all current holdings
     holdings = await db.holdings.find({"portfolioId": portfolio_id}).to_list(length=None)
     
-    # Calculate equity (current value of holdings)
-    equity = 0.0
-    unrealized_pnl = 0.0  # Unrealized P&L on held properties
-    
-    for holding in holdings:
-        property_id = holding['propertyId']
-        buy_price = holding['buyPrice']
-        
-        # Get current price
-        current_price = await get_property_current_price(db, property_id, current_t)
-        equity += current_price
-        
-        # Unrealized P&L = current value - buy price (the buy price excludes fees).
-        # Purchase fees were already deducted from cash, so they are already
-        # reflected in the total P&L.
-        unrealized_pnl += (current_price - buy_price)
-    
-    # Calculate realized P&L from all trades (buys + sells)
+    # Value the holdings. One batched price lookup for the whole portfolio,
+    # not one per property: this page used to cost a round trip per holding.
+    property_ids = [holding['propertyId'] for holding in holdings]
+    prices = await get_property_current_prices(db, property_ids, current_t)
+    equity = sum(prices.get(pid, 0) for pid in property_ids)
+
+    # Every trade this portfolio ever made, read once. The year-to-date subset
+    # is taken from it in memory rather than with a second query: it is the
+    # same documents filtered on the same field.
     all_trades = await db.trades.find({
         "portfolioId": portfolio_id
     }).to_list(length=None)
-    
-    realized_pnl = 0.0
-    buy_prices = {}  # Map propertyId -> buy price for P&L calculation
-    
-    for trade in all_trades:
-        prop_id_str = str(trade['propertyId'])
-        
-        if trade['side'] == 'buy':
-            # Buy: store the buy price (excluding fees)
-            buy_prices[prop_id_str] = trade['price']
-            # Purchase fees are an immediate loss
-            realized_pnl -= trade['fees']
 
-        elif trade['side'] == 'sell':
-            # Sell: P&L = sale price - fees - buy price
-            sell_price = trade['price']
-            sell_fees = trade['fees']
-            original_buy_price = buy_prices.get(prop_id_str, 0)
-
-            # P&L for this sale
-            trade_pnl = (sell_price - sell_fees) - original_buy_price
-            realized_pnl += trade_pnl
-    
-    # Calculate renovation costs (money spent on renovation works)
-    all_holdings = await db.holdings.find({
-        "portfolioId": portfolio_id
-    }).to_list(length=None)
-    
-    renovation_costs = 0.0
-    for holding in all_holdings:
-        for work in holding.get('works', []):
-            reno = await db.renovations.find_one({"_id": work['renoId']})
-            if reno:
-                renovation_costs += reno['cost']
-    
-    # Total P&L = Current total value - Initial capital
+    # Total P&L is the whole position measured against what the account
+    # started with. Cash already carries every fee and renovation that was
+    # ever paid, because each one was debited from it.
     total_value = cash + equity
     pnl_total = total_value - INITIAL_CAPITAL
-    
-    # Alternative calculation (should give same result):
-    # pnl_total = realized_pnl + unrealized_pnl - renovation_costs
-    
-    # Calculate YTD P&L (trades from the current year)
+
     current_year = parse_quarter_string(current_t)[0]
     year_start = datetime(current_year, 1, 1)
-    
-    trades_ytd = await db.trades.find({
-        "portfolioId": portfolio_id,
-        "ts": {"$gte": year_start}
-    }).to_list(length=None)
-    
+
+    # A sale is scored against the purchase that opened the position, which may
+    # have happened in an earlier year, so buy prices are collected from the
+    # full history before the year-to-date pass reads them.
+    buy_prices = {
+        str(trade['propertyId']): trade['price']
+        for trade in all_trades if trade['side'] == 'buy'
+    }
+
     pnl_ytd = 0.0
     ytd_buy_prices = {}
-    
-    for trade in trades_ytd:
+
+    for trade in all_trades:
+        if trade.get('ts') is None or trade['ts'] < year_start:
+            continue
+
         prop_id_str = str(trade['propertyId'])
-        
+
         if trade['side'] == 'buy':
             ytd_buy_prices[prop_id_str] = trade['price']
             pnl_ytd -= trade['fees']
         elif trade['side'] == 'sell':
-            sell_price = trade['price']
-            sell_fees = trade['fees']
-            # Check if bought this year or before
-            original_buy_price = ytd_buy_prices.get(prop_id_str) or buy_prices.get(prop_id_str, 0)
-            trade_pnl = (sell_price - sell_fees) - original_buy_price
-            pnl_ytd += trade_pnl
-    
+            original_buy_price = (
+                ytd_buy_prices.get(prop_id_str)
+                or buy_prices.get(prop_id_str, 0)
+            )
+            pnl_ytd += (trade['price'] - trade['fees']) - original_buy_price
+
     return PortfolioSummary(
         cash=round(cash, 2),
         equity=round(equity, 2),
@@ -195,30 +161,49 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
             prop_id_str = str(trade['propertyId'])
             buy_fees_map[prop_id_str] = trade.get('fees', 0)
     
+    # Everything the loop needs, read in three queries instead of three per
+    # holding: the properties, their current prices, and the renovations any of
+    # the works refer to.
+    property_ids = [holding['propertyId'] for holding in holdings]
+    properties = await db.properties.find(
+        {"_id": {"$in": property_ids}}
+    ).to_list(length=None)
+    properties_by_id = {prop['_id']: prop for prop in properties}
+
+    prices = await get_property_current_prices(db, property_ids, current_t)
+
+    renovation_ids = [
+        work['renoId']
+        for holding in holdings
+        for work in holding.get('works', [])
+    ]
+    renovation_costs_by_id = {}
+    if renovation_ids:
+        renovations = await db.renovations.find(
+            {"_id": {"$in": list(set(renovation_ids))}}
+        ).to_list(length=None)
+        renovation_costs_by_id = {reno['_id']: reno['cost'] for reno in renovations}
+
     results = []
     for holding in holdings:
         property_id = holding['propertyId']
         prop_id_str = str(property_id)
         buy_price = holding['buyPrice']
-        
-        # Get property details
-        prop = await db.properties.find_one({"_id": property_id})
+
+        prop = properties_by_id.get(property_id)
         if not prop:
             continue
-        
-        # Get current price
-        current_price = await get_property_current_price(db, property_id, current_t)
-        
+
+        current_price = prices.get(property_id, 0)
+
         # Calculate total cost basis
         buy_fees = buy_fees_map.get(prop_id_str, 0)
-        
-        # Add renovation costs
-        renovation_costs = 0.0
-        for work in holding.get('works', []):
-            reno = await db.renovations.find_one({"_id": work['renoId']})
-            if reno:
-                renovation_costs += reno['cost']
-        
+
+        renovation_costs = sum(
+            renovation_costs_by_id.get(work['renoId'], 0.0)
+            for work in holding.get('works', [])
+        )
+
         # Total invested = buy price + purchase fees + renovation works
         total_invested = buy_price + buy_fees + renovation_costs
 

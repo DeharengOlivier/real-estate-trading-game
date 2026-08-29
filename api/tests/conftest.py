@@ -81,6 +81,56 @@ class Rendezvous:
             pass
 
 
+class CountingCollection:
+    """Forward every call to a real collection, counting the round trips."""
+
+    _COUNTED = (
+        "find", "find_one", "count_documents", "aggregate",
+        "insert_one", "insert_many", "update_one", "update_many",
+        "delete_one", "delete_many",
+        "find_one_and_update", "find_one_and_delete",
+    )
+
+    def __init__(self, collection, tally, name):
+        self._collection = collection
+        self._tally = tally
+        self._name = name
+
+    def __getattr__(self, attribute):
+        target = getattr(self._collection, attribute)
+        if attribute not in self._COUNTED:
+            return target
+
+        def counted(*args, **kwargs):
+            self._tally.append(f"{self._name}.{attribute}")
+            return target(*args, **kwargs)
+
+        return counted
+
+
+class CountingDatabase:
+    """A database that records every collection call made through it.
+
+    Query count is the number this project's slow paths are made of: a loop
+    that reads one document per item is invisible in the code and obvious in
+    the tally. Use it to state a bound, not to admire a number.
+    """
+
+    def __init__(self, db):
+        self._db = db
+        self.calls = []
+
+    def __getattr__(self, name):
+        return CountingCollection(getattr(self._db, name), self.calls, name)
+
+    def __getitem__(self, name):
+        return CountingCollection(self._db[name], self.calls, name)
+
+    def count(self, prefix: str = "") -> int:
+        """How many calls were made, optionally only those starting with prefix."""
+        return sum(1 for call in self.calls if call.startswith(prefix))
+
+
 async def _fake_connect_to_mongo():
     """Mongomock-backed replacement for api.database.connect_to_mongo.
 

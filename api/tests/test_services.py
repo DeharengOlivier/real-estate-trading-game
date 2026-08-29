@@ -7,7 +7,10 @@ without going through the HTTP layer.
 import math
 import pytest
 
+from bson import ObjectId
+
 from api import services
+from api.database import get_database
 from api.auth import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
 from jose import jwt
 
@@ -105,3 +108,70 @@ def test_access_token_encodes_subject():
     payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     assert payload["sub"] == "abc123"
     assert "exp" in payload
+
+
+# --- batched pricing --------------------------------------------------------
+#
+# get_property_current_prices exists to answer the same question as
+# get_property_current_price for a whole list at a bounded cost. A faster
+# function that answers differently is not an optimisation, so these tests
+# compare the two rather than trusting the batched one on its own.
+
+
+@pytest.mark.asyncio
+async def test_batched_prices_agree_with_the_single_property_helper():
+    from api.services import get_property_current_price, get_property_current_prices
+
+    db = get_database()
+    ids = []
+    for index in range(5):
+        prop = await db.properties.insert_one({
+            "zone": "Bruxelles-Centre", "type": "house", "surface": 100 + index,
+            "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6,
+            "base_ppm": 3000,
+        })
+        ids.append(prop.inserted_id)
+
+    # Half priced from history, half left to be computed from the market index.
+    for property_id in ids[:3]:
+        await db.pricehistory.insert_one({
+            "propertyId": property_id, "t": "2020-1", "price": 123_456.0,
+        })
+
+    batched = await get_property_current_prices(db, ids, "2020-1")
+
+    for property_id in ids:
+        one = await get_property_current_price(db, property_id, "2020-1")
+        assert batched[property_id] == pytest.approx(one)
+
+
+@pytest.mark.asyncio
+async def test_batched_prices_answer_zero_for_an_unknown_property():
+    from api.services import get_property_current_prices
+
+    db = get_database()
+    unknown = ObjectId()
+    prices = await get_property_current_prices(db, [unknown], "2020-1")
+
+    assert prices[unknown] == 0
+
+
+@pytest.mark.asyncio
+async def test_batched_prices_handle_an_empty_list_and_duplicates():
+    from api.services import get_property_current_prices
+
+    db = get_database()
+    assert await get_property_current_prices(db, [], "2020-1") == {}
+
+    prop = await db.properties.insert_one({
+        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
+        "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6, "base_ppm": 3000,
+    })
+    await db.pricehistory.insert_one({
+        "propertyId": prop.inserted_id, "t": "2020-1", "price": 200_000.0,
+    })
+
+    prices = await get_property_current_prices(
+        db, [prop.inserted_id, prop.inserted_id], "2020-1"
+    )
+    assert prices == {prop.inserted_id: 200_000.0}
