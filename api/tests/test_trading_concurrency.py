@@ -27,40 +27,7 @@ from httpx import AsyncClient
 import api.routers.trading as trading
 from api.database import get_database
 from api.main import app
-
-
-# How long a lone arrival waits for a partner that is never coming. Short
-# enough to keep the suite fast, long enough that a genuine second request
-# would have arrived.
-LONE_ARRIVAL_GRACE_SECONDS = 0.25
-
-
-class Rendezvous:
-    """Hold the first arrivals until ``party`` of them are inside.
-
-    An arrival that waits out ``LONE_ARRIVAL_GRACE_SECONDS`` alone continues
-    anyway, and this is deliberate: with the guards in place the loser of a
-    race is refused *before* it reaches the rendezvous, so exactly one request
-    ever gets here. Deadlocking on that would turn "the fix works" into a
-    timeout. Reintroduce the read-check-write pattern and both requests arrive
-    again, the wait ends immediately, and the battery goes red.
-    """
-
-    def __init__(self, party: int):
-        self.party = party
-        self.arrived = 0
-        self.everybody_is_here = asyncio.Event()
-
-    async def wait(self):
-        self.arrived += 1
-        if self.arrived >= self.party:
-            self.everybody_is_here.set()
-        try:
-            await asyncio.wait_for(
-                self.everybody_is_here.wait(), timeout=LONE_ARRIVAL_GRACE_SECONDS
-            )
-        except asyncio.TimeoutError:
-            pass
+from api.tests.conftest import Rendezvous
 
 
 @pytest.fixture

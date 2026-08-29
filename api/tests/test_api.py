@@ -41,24 +41,10 @@ async def test_buy_reduces_cash_and_creates_holding(test_user_and_token):
         "createdAt": datetime.utcnow()
     })
     
-    # Create market index
-    await db.marketindex.insert_one({
-        "t": "2020-1",
-        "inflation": 0.02,
-        "rate": 0.015,
-        "income": 0.01,
-        "unemployment": 0.05,
-        "confidence": 0.0,
-        "policy": 0.0,
-        "locals": [{
-            "zone": "Bruxelles-Centre",
-            "access": 0.0,
-            "attract": 0.0,
-            "nuisance": 0.05,
-            "tension": 0.0
-        }]
-    })
-    
+    # The market index for "2020-1" comes from the baseline fixture and covers
+    # every zone. Inserting a second document for the same quarter is what the
+    # unique index on marketindex.t exists to stop, in a test as in production.
+
     # Create listing
     listing_price = 300000
     await db.listings.insert_one({

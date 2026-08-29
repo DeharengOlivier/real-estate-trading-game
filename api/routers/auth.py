@@ -9,6 +9,8 @@ from itertools import count
 import time
 import logging
 
+from pymongo.errors import DuplicateKeyError
+
 from api.database import get_database, get_redis_client
 from seed.constants import INITIAL_CASH
 from api.models import UserRegister, UserLogin, Token
@@ -80,6 +82,18 @@ async def check_rate_limit(username: str) -> bool:
     return True
 
 
+def _duplicated_field(conflict: DuplicateKeyError) -> str:
+    """Name the field a unique index refused, for the message to the caller.
+
+    Falls back to "Account" when the driver does not report a key pattern, so a
+    conflict is never reported as an empty sentence.
+    """
+    key_pattern = (conflict.details or {}).get("keyPattern") or {}
+    for field in key_pattern:
+        return field.capitalize()
+    return "Account"
+
+
 async def _cash_of(db, user_id) -> float:
     """Read a user's balance from the portfolio, the only thing that holds it.
 
@@ -106,15 +120,18 @@ async def register(user_data: UserRegister):
 
     # The password rule is stated once, on UserRegister, and enforced before
     # this function is entered: a request that gets here has already passed it.
-    # Check if username already exists
+
+    # A courtesy check, not the guarantee. It exists so the common case gets a
+    # clear message without paying for a bcrypt hash; the unique index below is
+    # what actually stops two people owning one username, because two requests
+    # can both find nothing here.
     existing_user = await db.users.find_one({"username": user_data.username})
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already registered"
         )
-    
-    # Hash password
+
     hashed_password = get_password_hash(user_data.password)
     
     # Create user document
@@ -130,7 +147,17 @@ async def register(user_data: UserRegister):
         "createdAt": datetime.utcnow()
     }
     
-    result = await db.users.insert_one(user_doc)
+    try:
+        result = await db.users.insert_one(user_doc)
+    except DuplicateKeyError as conflict:
+        # The index refused it: somebody else took the name or the address
+        # between the check above and this line, or in the same instant.
+        field = _duplicated_field(conflict)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{field} already registered"
+        )
+
     user_id = result.inserted_id
     
     # Create portfolio for the new user

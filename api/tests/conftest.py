@@ -47,10 +47,50 @@ _COLLECTIONS = [
 ]
 
 
+# How long a lone arrival waits for a partner that is never coming. Short
+# enough to keep the suite fast, long enough that a genuine second request
+# would have arrived.
+LONE_ARRIVAL_GRACE_SECONDS = 0.25
+
+
+class Rendezvous:
+    """Hold the first arrivals until ``party`` of them are inside.
+
+    An arrival that waits out ``LONE_ARRIVAL_GRACE_SECONDS`` alone continues
+    anyway, and this is deliberate: with the guards in place the loser of a
+    race is refused *before* it reaches the rendezvous, so exactly one request
+    ever gets here. Deadlocking on that would turn "the fix works" into a
+    timeout. Reintroduce the read-check-write pattern and both requests arrive
+    again, the wait ends immediately, and the battery goes red.
+    """
+
+    def __init__(self, party: int):
+        self.party = party
+        self.arrived = 0
+        self.everybody_is_here = asyncio.Event()
+
+    async def wait(self):
+        self.arrived += 1
+        if self.arrived >= self.party:
+            self.everybody_is_here.set()
+        try:
+            await asyncio.wait_for(
+                self.everybody_is_here.wait(), timeout=LONE_ARRIVAL_GRACE_SECONDS
+            )
+        except asyncio.TimeoutError:
+            pass
+
+
 async def _fake_connect_to_mongo():
-    """Mongomock-backed replacement for api.database.connect_to_mongo."""
+    """Mongomock-backed replacement for api.database.connect_to_mongo.
+
+    It creates the indexes too, because the constraints they carry are part of
+    what the application is: a suite running without them would be testing a
+    different database from the one that ships.
+    """
     database.mongodb_client = _mock_mongo_client
     database.mongodb_db = _mock_mongo_client[_mock_db_name]
+    await database.ensure_indexes(database.mongodb_db)
 
 
 async def _fake_connect_to_redis():

@@ -23,8 +23,37 @@ async def connect_to_mongo():
     
     mongodb_client = AsyncIOMotorClient(mongodb_url)
     mongodb_db = mongodb_client[mongodb_db_name]
-    
+
+    await ensure_indexes(mongodb_db)
+
     print(f"✓ Connected to MongoDB: {mongodb_db_name}")
+
+
+async def ensure_indexes(db) -> None:
+    """Create the indexes the application depends on, if they are missing.
+
+    Two kinds live here, and they are not interchangeable:
+
+    - the unique ones are *constraints*. `find_one` then `insert_one` is
+      advisory, because two requests can both find nothing; the index is what
+      actually makes a username belong to one person.
+    - the others exist for the query patterns the routers issue.
+
+    createIndex is idempotent, so this runs on every start. It is called here
+    rather than only in the seed, because a database that was never seeded, or
+    was seeded by an older version, must still get them.
+    """
+    await db.users.create_index("username", unique=True)
+    await db.users.create_index("email", unique=True)
+    await db.portfolios.create_index("userId", unique=True)
+    await db.properties.create_index([("zone", 1), ("type", 1)])
+    await db.marketindex.create_index("t", unique=True)
+    await db.listings.create_index("propertyId", unique=True)
+    await db.listings.create_index("isAvailable")
+    await db.holdings.create_index("portfolioId")
+    await db.holdings.create_index([("portfolioId", 1), ("propertyId", 1)], unique=True)
+    await db.trades.create_index([("portfolioId", 1), ("ts", -1)])
+    await db.pricehistory.create_index([("propertyId", 1), ("t", 1)])
 
 
 async def connect_to_redis():

@@ -393,15 +393,10 @@ async def seed_database():
     await db.listings.insert_many(listings)
     print(f"   ✓ {len(listings)} listings created")
     
-    # 8. Create indices
-    print("🔍 Creating database indices...")
-    await db.properties.create_index([("zone", 1), ("type", 1)])
-    await db.marketindex.create_index("t", unique=True)
-    await db.listings.create_index("isAvailable")
-    await db.holdings.create_index("portfolioId")
-    await db.trades.create_index([("portfolioId", 1), ("ts", -1)])
-    await db.pricehistory.create_index([("propertyId", 1), ("t", 1)])
-    print("   ✓ Indices created")
+    # Indexes are not created here. Dropping a collection drops its indexes, so
+    # a copy of the list in this file would be a second place to keep in step
+    # with api/database.py. The API creates them on every start, and compose
+    # starts it after this script completes.
     
     print("\n✅ Seed completed successfully!")
     print(f"   • {len(property_ids)} properties")
