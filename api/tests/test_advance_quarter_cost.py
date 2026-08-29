@@ -11,12 +11,10 @@ is its cost, stated as a bound rather than discovered in production.
 from datetime import datetime
 
 import pytest
-from httpx import AsyncClient
 
 import api.routers.game as game_router
 from api.database import get_database
-from api.main import app
-from api.tests.conftest import CountingDatabase
+from api.tests.conftest import CountingDatabase, api_client
 
 PROPERTIES = 40
 
@@ -49,7 +47,7 @@ async def test_advancing_a_quarter_is_flat_in_the_number_of_properties(
     db = get_database()
     await _fill_market(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
 
     assert response.status_code == 200, response.text
@@ -67,7 +65,7 @@ async def test_no_single_document_write_per_listing(
     db = get_database()
     await _fill_market(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.post("/game/advance-quarter", headers=headers)
 
     assert counted_queries.count("listings.update_one") <= 1, (
@@ -84,7 +82,7 @@ async def test_the_bound_holds_when_the_catalog_doubles(
     db = get_database()
     await _fill_market(db, count=PROPERTIES * 2)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.post("/game/advance-quarter", headers=headers)
 
     assert counted_queries.count() <= 12, (
@@ -99,7 +97,7 @@ async def test_every_price_is_still_written(test_user_and_token):
     await _fill_market(db, count=10)
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
 
     next_quarter = response.json()["quarter"]
@@ -139,7 +137,7 @@ async def test_a_completed_renovation_is_still_applied(test_user_and_token):
     })
     before = await db.properties.find_one({"_id": prop.inserted_id})
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
 
     assert response.json()["renovationsCompleted"] == 1

@@ -10,10 +10,9 @@ They meet here. The demo user is created by the same function the seed calls,
 against the in-memory database, and then logs in through the real endpoint.
 """
 import pytest
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 from seed.seed_realestate import (
     DEMO_PASSWORD,
     DEMO_USERNAME,
@@ -26,7 +25,7 @@ async def test_the_seeded_account_can_log_in():
     db = get_database()
     await create_demo_user(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/login", json={
             "username": DEMO_USERNAME,
             "password": DEMO_PASSWORD,
@@ -41,7 +40,7 @@ async def test_the_token_the_seeded_account_receives_identifies_it():
     db = get_database()
     await create_demo_user(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         login = await client.post("/auth/login", json={
             "username": DEMO_USERNAME,
             "password": DEMO_PASSWORD,
@@ -61,7 +60,7 @@ async def test_the_wrong_password_is_still_refused():
     db = get_database()
     await create_demo_user(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/login", json={
             "username": DEMO_USERNAME,
             "password": DEMO_PASSWORD + "wrong",
@@ -76,7 +75,7 @@ async def test_the_seeded_account_can_reach_the_admin_surface():
     db = get_database()
     await create_demo_user(db)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         login = await client.post("/auth/login", json={
             "username": DEMO_USERNAME,
             "password": DEMO_PASSWORD,

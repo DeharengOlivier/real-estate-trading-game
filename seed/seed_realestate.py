@@ -6,14 +6,9 @@ import asyncio
 import math
 import os
 import random
-import sys
 from datetime import datetime
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 import bcrypt
-import numpy as np
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 
@@ -119,7 +114,10 @@ def compute_property_price(
     # Noise
     noise = 1.0
     if add_noise:
-        eps = np.random.normal(0, SIGMA_NOISE)
+        # random.gauss, not numpy: this was the only call in the project
+        # that used numpy, and a 20 MB dependency for one Gaussian draw does
+        # not name a constraint the standard library fails to meet.
+        eps = random.gauss(0, SIGMA_NOISE)
         noise = math.exp(eps)
 
     price = base_price * char_multiplier * macro_idx * local_idx * noise
@@ -286,9 +284,8 @@ async def seed_database():
     """Main seed function"""
     print("🌱 Starting seed process...")
 
-    # Set random seeds
+    # One generator, one seed: the whole world below is reproducible from it.
     random.seed(RANDOM_SEED)
-    np.random.seed(RANDOM_SEED)
 
     # Connect to MongoDB
     mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")

@@ -10,11 +10,10 @@ id.
 """
 import pytest
 from bson import ObjectId
-from httpx import AsyncClient
 from jose import jwt
 
 from api.auth import ALGORITHM, SECRET_KEY
-from api.main import app
+from api.tests.conftest import api_client
 
 MALFORMED_IDS = [
     "not-an-object-id",
@@ -32,7 +31,7 @@ async def test_buying_a_malformed_property_id_is_a_client_error(
 ):
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": malformed}
         )
@@ -48,7 +47,7 @@ async def test_selling_a_malformed_property_id_is_a_client_error(
 ):
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/sell", headers=headers, json={"propertyId": malformed}
         )
@@ -64,7 +63,7 @@ async def test_renovating_a_malformed_holding_id_is_a_client_error(
 ):
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate",
             headers=headers,
@@ -83,7 +82,7 @@ async def test_a_malformed_token_subject_answers_401_not_500(malformed):
     """
     token = jwt.encode({"sub": malformed}, SECRET_KEY, algorithm=ALGORITHM)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/auth/me", headers={"Authorization": f"Bearer {token}"}
         )
@@ -100,7 +99,7 @@ async def test_a_malformed_property_id_in_a_chart_path_is_a_client_error(
     if not malformed or "/" in malformed:
         pytest.skip("not addressable as a single path segment")
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             f"/charts/property/{malformed}", headers=headers
         )
@@ -115,7 +114,7 @@ async def test_a_well_formed_but_unknown_id_is_still_a_clean_404(
     """Well formed and absent must stay distinguishable from malformed."""
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(ObjectId())}
         )

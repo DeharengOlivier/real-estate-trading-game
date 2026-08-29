@@ -21,12 +21,10 @@ import asyncio
 from datetime import datetime
 
 import pytest
-from httpx import AsyncClient
 
 import api.routers.trading as trading
 from api.database import get_database
-from api.main import app
-from api.tests.conftest import Rendezvous
+from api.tests.conftest import Rendezvous, api_client
 
 
 @pytest.fixture
@@ -74,7 +72,7 @@ async def test_two_overlapping_buys_cannot_spend_the_same_cash_twice(
     first = await _create_listing(db, 200_000.0)
     second = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             client.post("/trading/buy", headers=headers,
                         json={"propertyId": str(first)}),
@@ -104,7 +102,7 @@ async def test_the_losing_buyer_is_charged_nothing(
     first = await _create_listing(db, 200_000.0)
     second = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await asyncio.gather(
             client.post("/trading/buy", headers=headers,
                         json={"propertyId": str(first)}),
@@ -137,7 +135,7 @@ async def test_a_property_cannot_be_sold_to_two_players_at_once(
 
     property_id = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             client.post("/trading/buy", headers=headers_a,
                         json={"propertyId": str(property_id)}),
@@ -161,7 +159,7 @@ async def test_the_refused_buyer_of_a_taken_property_is_charged_nothing(
     property_id = await _create_listing(db, 200_000.0)
     before = (await db.portfolios.find_one({"userId": player["user_id"]}))["cash"]
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             client.post("/trading/buy", headers=headers_a,
                         json={"propertyId": str(property_id)}),
@@ -203,7 +201,7 @@ async def test_the_same_holding_cannot_be_sold_twice(
         "works": [],
     })
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             client.post("/trading/sell", headers=headers,
                         json={"propertyId": str(property_id)}),
@@ -231,7 +229,7 @@ async def test_an_ordinary_purchase_still_works(test_user_and_token):
     db = get_database()
     property_id = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(property_id)}
         )
@@ -255,7 +253,7 @@ async def test_a_purchase_beyond_the_balance_is_refused_and_charges_nothing(
     )
     property_id = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(property_id)}
         )

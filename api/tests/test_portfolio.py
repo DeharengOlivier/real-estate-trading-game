@@ -4,10 +4,9 @@ Tests for the portfolio router: summary, P&L computation, and holdings detail.
 from datetime import datetime
 
 import pytest
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
@@ -28,9 +27,13 @@ async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
 
 @pytest.mark.asyncio
 async def test_summary_requires_auth():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary")
-        assert response.status_code == 403
+        # No Authorization header at all: 401. FastAPI's HTTPBearer used to
+        # answer 403 here, which said "you may not" to a caller who had not
+        # yet said who they were. 401 is the answer to a missing credential;
+        # 403 is what an identified caller without the role gets.
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -38,7 +41,7 @@ async def test_summary_empty_portfolio(test_user_and_token):
     """A fresh portfolio has all cash, no equity and zero P&L."""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary", headers=headers)
         assert response.status_code == 200
         data = response.json()
@@ -83,7 +86,7 @@ async def test_summary_unrealized_gain(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-1", "price": current_price}
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary", headers=headers)
         data = response.json()
 
@@ -98,7 +101,7 @@ async def test_summary_unrealized_gain(test_user_and_token):
 @pytest.mark.asyncio
 async def test_holdings_empty(test_user_and_token):
     user_data, token, headers = test_user_and_token
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/holdings", headers=headers)
         assert response.status_code == 200
         assert response.json() == []
@@ -139,7 +142,7 @@ async def test_holdings_detail_includes_costs_and_pnl(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-1", "price": current_price}
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/holdings", headers=headers)
         assert response.status_code == 200
         holdings = response.json()

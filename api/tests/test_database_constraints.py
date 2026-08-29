@@ -10,12 +10,10 @@ An application-level check is advisory. A unique index is the constraint.
 import asyncio
 
 import pytest
-from httpx import AsyncClient
 
 import api.routers.auth as auth_router
 from api.database import get_database
-from api.main import app
-from api.tests.conftest import Rendezvous
+from api.tests.conftest import Rendezvous, api_client
 
 
 class _HoldAfterUserLookup:
@@ -109,7 +107,7 @@ async def test_two_overlapping_registrations_produce_one_account(
     overlap_two_registrations,
 ):
     """The check and the insert are two operations; the constraint is one."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             _register(client, "twin"),
             _register(client, "twin"),
@@ -125,7 +123,7 @@ async def test_the_losing_registration_leaves_no_portfolio_behind(
     overlap_two_registrations,
 ):
     """A refused registration must not leave an orphan portfolio funded."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await asyncio.gather(
             _register(client, "twin"),
             _register(client, "twin"),
@@ -137,7 +135,7 @@ async def test_the_losing_registration_leaves_no_portfolio_behind(
 
 @pytest.mark.asyncio
 async def test_a_duplicate_email_is_refused_too():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         first = await _register(client, "alice", email="shared@example.com")
         second = await _register(client, "bob", email="shared@example.com")
 
@@ -147,7 +145,7 @@ async def test_a_duplicate_email_is_refused_too():
 
 @pytest.mark.asyncio
 async def test_a_sequential_duplicate_still_says_what_is_wrong():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await _register(client, "taken")
         second = await _register(client, "taken")
 
@@ -158,7 +156,7 @@ async def test_a_sequential_duplicate_still_says_what_is_wrong():
 @pytest.mark.asyncio
 async def test_two_different_names_both_register():
     """The constraint must refuse the duplicate without refusing the ordinary."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         responses = await asyncio.gather(
             _register(client, "one"),
             _register(client, "two"),

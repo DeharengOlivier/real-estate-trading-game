@@ -16,12 +16,10 @@ trades, and the batched reads of properties, prices and renovations.
 from datetime import datetime
 
 import pytest
-from httpx import AsyncClient
 
 import api.routers.portfolio as portfolio_router
 from api.database import get_database
-from api.main import app
-from api.tests.conftest import CountingDatabase
+from api.tests.conftest import CountingDatabase, api_client
 
 HOLDINGS = 12
 WORKS_PER_HOLDING = 3
@@ -79,7 +77,7 @@ async def test_the_summary_costs_the_same_whatever_the_portfolio_holds(
     db = get_database()
     await _fill_portfolio(db, user["user_id"])
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary", headers=headers)
 
     assert response.status_code == 200, response.text
@@ -97,7 +95,7 @@ async def test_the_summary_reads_no_document_per_renovation_work(
     db = get_database()
     await _fill_portfolio(db, user["user_id"])
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.get("/portfolio/summary", headers=headers)
 
     assert counted_queries.count("renovations.find_one") == 0, (
@@ -114,7 +112,7 @@ async def test_the_holdings_page_costs_the_same_whatever_it_lists(
     db = get_database()
     await _fill_portfolio(db, user["user_id"])
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/holdings", headers=headers)
 
     assert response.status_code == 200, response.text
@@ -133,7 +131,7 @@ async def test_the_bound_holds_when_the_portfolio_doubles(
     db = get_database()
     await _fill_portfolio(db, user["user_id"], holdings=HOLDINGS * 2)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.get("/portfolio/summary", headers=headers)
         first = counted_queries.count()
         counted_queries.calls.clear()

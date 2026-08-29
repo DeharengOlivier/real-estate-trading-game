@@ -10,10 +10,9 @@ These tests assert the rule through the endpoint, so they hold whichever layer
 ends up enforcing it, and they name the reason each password is refused.
 """
 import pytest
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 REFUSED = [
     ("nouppercase123", "no uppercase letter"),
@@ -37,7 +36,7 @@ async def _register(client, password, username="candidate"):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("password,why", REFUSED)
 async def test_a_password_missing_a_required_class_is_refused(password, why):
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await _register(client, password)
 
     assert response.status_code == 422, f"accepted a password with {why}"
@@ -46,7 +45,7 @@ async def test_a_password_missing_a_required_class_is_refused(password, why):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("password,why", REFUSED)
 async def test_a_refused_registration_creates_nothing(password, why):
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await _register(client, password)
 
     db = get_database()
@@ -63,7 +62,7 @@ async def test_a_refused_registration_creates_nothing(password, why):
 ])
 async def test_a_compliant_password_is_accepted(password):
     """The rule must refuse the weak without refusing the merely unusual."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await _register(client, password)
 
     assert response.status_code == 201, response.text
@@ -71,7 +70,7 @@ async def test_a_compliant_password_is_accepted(password):
 
 @pytest.mark.asyncio
 async def test_the_password_is_never_stored_or_returned():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await _register(client, "CorrectHorse1")
 
     assert "CorrectHorse1" not in response.text

@@ -1,17 +1,23 @@
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-motor==3.3.2
-pymongo==4.6.1
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
-redis==5.0.1
-numpy==1.26.3
-pytest==7.4.4
-pytest-asyncio==0.23.3
-httpx==0.26.0
-email-validator==2.1.0
-python-jose[cryptography]==3.3.0
-bcrypt==4.1.2
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+motor==3.7.1
 
+# Held one minor version back on purpose. From pymongo 4.11 every UpdateOne
+# passes a `sort` argument down to the bulk builder, and mongomock 4.3.0, the
+# in-memory MongoDB the whole test suite runs against, rejects it: bulk_write
+# raises TypeError and the quarter advance cannot be tested at all. Motor 3.7
+# supports 4.9 through 4.10, so this is a supported pairing, not a workaround
+# on the driver's behalf.
+# Remove the ceiling once mongomock accepts the argument.
+pymongo==4.10.1
 
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+redis==8.1.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx==0.28.1
+email-validator==2.3.0
+python-jose[cryptography]==3.5.0
+bcrypt==5.0.0

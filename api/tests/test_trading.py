@@ -5,10 +5,9 @@ from datetime import datetime
 
 import pytest
 from bson import ObjectId
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 async def _make_property_with_listing(db, *, zone, type_, surface, base_ppm,
@@ -39,7 +38,7 @@ async def _make_property_with_listing(db, *, zone, type_, surface, base_ppm,
 @pytest.mark.asyncio
 async def test_listings_empty():
     """No available listings returns an empty paginated payload."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings")
         assert response.status_code == 200
         data = response.json()
@@ -57,7 +56,7 @@ async def test_listings_filter_by_type():
     await _make_property_with_listing(db, zone="Ixelles", type_="house",
                                       surface=150, base_ppm=4800, price=720000)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings?type=house")
         assert response.status_code == 200
         items = response.json()["items"]
@@ -76,7 +75,7 @@ async def test_listings_filter_by_price_range():
     await _make_property_with_listing(db, zone="Uccle", type_="apartment",
                                       surface=120, base_ppm=5000, price=600000)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings?minPrice=150000&maxPrice=400000")
         assert response.status_code == 200
         items = response.json()["items"]
@@ -93,7 +92,7 @@ async def test_listings_pagination_and_sort():
         await _make_property_with_listing(db, zone="Schaerbeek", type_="apartment",
                                           surface=60 + i, base_ppm=3000, price=price)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/trading/listings?page=1&limit=2&sortBy=price&sortOrder=desc"
         )
@@ -116,7 +115,7 @@ async def test_listings_enrichment_fields():
     await _make_property_with_listing(db, zone="Bruxelles-Centre", type_="apartment",
                                       surface=100, base_ppm=4200, price=420000)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings")
         item = response.json()["items"][0]
         # Price per m2 computed in Python
@@ -135,7 +134,7 @@ async def test_listings_unavailable_excluded():
                                       surface=100, base_ppm=2900, price=290000,
                                       available=False)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings?zone=Namur-Centre")
         assert response.json()["total"] == 0
 
@@ -145,9 +144,13 @@ async def test_listings_unavailable_excluded():
 @pytest.mark.asyncio
 async def test_buy_requires_auth():
     """Buying without a token is rejected."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/trading/buy", json={"propertyId": str(ObjectId())})
-        assert response.status_code == 403
+        # No Authorization header at all: 401. FastAPI's HTTPBearer used to
+        # answer 403 here, which said "you may not" to a caller who had not
+        # yet said who they were. 401 is the answer to a missing credential;
+        # 403 is what an identified caller without the role gets.
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -161,7 +164,7 @@ async def test_buy_insufficient_funds(test_user_and_token):
         db, zone="Uccle", type_="house", surface=400, base_ppm=5200, price=2000000
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(prop_id)}
         )
@@ -178,7 +181,7 @@ async def test_buy_unavailable_property(test_user_and_token):
     """Buying a property with no available listing returns 404."""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(ObjectId())}
         )
@@ -196,7 +199,7 @@ async def test_buy_marks_listing_unavailable(test_user_and_token):
         db, zone="Ixelles", type_="apartment", surface=80, base_ppm=4000, price=price
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy", headers=headers, json={"propertyId": str(prop_id)}
         )
@@ -216,7 +219,7 @@ async def test_sell_property_not_in_portfolio(test_user_and_token):
     """Selling a property not held returns 404."""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/sell", headers=headers, json={"propertyId": str(ObjectId())}
         )
@@ -245,7 +248,7 @@ async def test_sell_blocked_by_ongoing_renovation(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-1", "price": 450000}
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/sell", headers=headers, json={"propertyId": str(prop_id)}
         )
@@ -278,7 +281,7 @@ async def test_sell_computes_pnl_and_credits_cash(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-1", "price": current_price}
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/sell", headers=headers, json={"propertyId": str(prop_id)}
         )

@@ -5,17 +5,20 @@ from datetime import datetime
 
 import pytest
 from bson import ObjectId
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 @pytest.mark.asyncio
 async def test_portfolio_equity_requires_auth():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/charts/portfolio-equity")
-        assert response.status_code == 403
+        # No Authorization header at all: 401. FastAPI's HTTPBearer used to
+        # answer 403 here, which said "you may not" to a caller who had not
+        # yet said who they were. 401 is the answer to a missing credential;
+        # 403 is what an identified caller without the role gets.
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -23,7 +26,7 @@ async def test_portfolio_equity_no_trades_snapshot(test_user_and_token):
     """With no trades, the endpoint returns a single current snapshot."""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/charts/portfolio-equity", headers=headers)
         assert response.status_code == 200
         data = response.json()
@@ -66,7 +69,7 @@ async def test_portfolio_equity_with_trades(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-1", "price": buy_price}
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/charts/portfolio-equity", headers=headers)
         assert response.status_code == 200
         series = response.json()
@@ -79,7 +82,7 @@ async def test_portfolio_equity_with_trades(test_user_and_token):
 @pytest.mark.asyncio
 async def test_property_price_chart_invalid_id(test_user_and_token):
     user_data, token, headers = test_user_and_token
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/charts/property/not-an-objectid", headers=headers)
         assert response.status_code == 400
 
@@ -87,7 +90,7 @@ async def test_property_price_chart_invalid_id(test_user_and_token):
 @pytest.mark.asyncio
 async def test_property_price_chart_not_found(test_user_and_token):
     user_data, token, headers = test_user_and_token
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(f"/charts/property/{ObjectId()}", headers=headers)
         assert response.status_code == 404
 
@@ -109,7 +112,7 @@ async def test_property_price_chart_series(test_user_and_token):
         {"propertyId": prop_id, "t": "2020-2", "price": 430000},
     ])
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(f"/charts/property/{prop_id}", headers=headers)
         assert response.status_code == 200
         data = response.json()

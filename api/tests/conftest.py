@@ -24,10 +24,12 @@ os.environ.setdefault(
 import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from mongomock_motor import AsyncMongoMockClient
 
 import api.database as database
 from api.auth import create_access_token, get_password_hash
+from api.main import app
 
 # Reusable singletons for the whole test session. Keeping a single mongomock
 # client means data inserted by a fixture is visible to the request handlers,
@@ -79,6 +81,16 @@ class Rendezvous:
             await asyncio.wait_for(
                 self.everybody_is_here.wait(), timeout=LONE_ARRIVAL_GRACE_SECONDS
             )
+
+
+def api_client() -> AsyncClient:
+    """An httpx client wired straight to the ASGI app, no socket involved.
+
+    Every test builds its client through this, so the transport is described
+    once. httpx 0.28 removed the ``app=`` shortcut in favour of an explicit
+    ASGITransport; the next such change is one edit here.
+    """
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
 
 class CountingCollection:

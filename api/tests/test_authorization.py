@@ -10,16 +10,15 @@ The battery covers three separate ways a caller can be wrong:
 - entitled by omission (a user document written before ``roles`` existed);
 - not authenticated at all (missing, forged, expired or malformed token).
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from bson import ObjectId
-from httpx import AsyncClient
 from jose import jwt
 
 from api.auth import ALGORITHM, SECRET_KEY, create_access_token
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 # Every write on the admin surface, as (method, path, json body).
 # The path placeholders are filled in per test with a real id where one is
@@ -61,7 +60,7 @@ async def test_ordinary_player_is_refused_on_every_admin_endpoint(
     _, _, headers = ordinary_user_and_token
     path = path.format(property_id=str(ObjectId()))
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await _call(client, method, path, body, headers)
 
     assert response.status_code == 403, (
@@ -78,7 +77,7 @@ async def test_a_user_without_the_roles_field_is_refused(
     _, _, headers = legacy_user_and_token
     path = path.format(property_id=str(ObjectId()))
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await _call(client, method, path, body, headers)
 
     assert response.status_code == 403
@@ -89,7 +88,7 @@ async def test_an_admin_still_gets_through(test_user_and_token):
     """The gate must refuse the player without also refusing the administrator."""
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/admin/properties", headers=headers, json={
             "zone": "Bruxelles-Centre", "type": "house", "surface": 120,
             "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6,
@@ -118,7 +117,7 @@ async def test_an_ordinary_player_cannot_read_everybody_elses_trades(
         "quarter": "2020-1",
     })
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/admin/trades", headers=player_headers)
 
     assert response.status_code == 403
@@ -132,7 +131,7 @@ async def test_an_ordinary_player_cannot_advance_the_game_clock(
     """Advancing the quarter rewrites the world for every player at once."""
     _, _, headers = ordinary_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
 
     assert response.status_code == 403
@@ -147,7 +146,7 @@ async def test_the_clock_did_not_move_when_the_player_was_refused(
     quarters_before = await db.marketindex.count_documents({})
     _, _, headers = ordinary_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.post("/game/advance-quarter", headers=headers)
 
     assert await db.marketindex.count_documents({}) == quarters_before
@@ -157,7 +156,7 @@ async def test_the_clock_did_not_move_when_the_player_was_refused(
 async def test_an_admin_can_still_advance_the_game_clock(test_user_and_token):
     _, _, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
 
     assert response.status_code == 200
@@ -171,7 +170,7 @@ async def test_registration_persists_the_role_it_reports():
     up decorative: every later read falls back to a default and the check that
     was supposed to use it silently passes.
     """
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/register", json={
             "username": "freshplayer",
             "email": "fresh@example.com",
@@ -190,7 +189,7 @@ async def test_registration_persists_the_role_it_reports():
 @pytest.mark.asyncio
 async def test_a_freshly_registered_player_cannot_administer():
     """The full path, end to end: register, then try the admin surface."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         registration = await client.post("/auth/register", json={
             "username": "sneaky",
             "email": "sneaky@example.com",
@@ -210,7 +209,7 @@ async def test_a_freshly_registered_player_cannot_administer():
 @pytest.mark.asyncio
 async def test_a_player_cannot_grant_themselves_a_role_at_registration():
     """The role is assigned by the server, never accepted from the request."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/register", json={
             "username": "selfpromoted",
             "email": "selfpromoted@example.com",
@@ -237,7 +236,7 @@ async def test_a_token_signed_with_another_key_is_refused(test_user_and_token):
         {"sub": str(user_data["user_id"])}, "not-the-real-key", algorithm=ALGORITHM
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/admin/trades", headers={"Authorization": f"Bearer {forged}"}
         )
@@ -249,7 +248,7 @@ async def test_a_token_signed_with_another_key_is_refused(test_user_and_token):
 async def test_a_token_with_no_subject_is_refused():
     token = jwt.encode({"nothing": "here"}, SECRET_KEY, algorithm=ALGORITHM)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/auth/me", headers={"Authorization": f"Bearer {token}"}
         )
@@ -271,7 +270,7 @@ async def test_a_token_for_a_deleted_user_is_refused():
     token = create_access_token(data={"sub": str(result.inserted_id)})
     await db.users.delete_one({"_id": result.inserted_id})
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/admin/trades", headers={"Authorization": f"Bearer {token}"}
         )
@@ -287,9 +286,118 @@ async def test_an_expired_token_is_refused(test_user_and_token):
         expires_delta=timedelta(minutes=-5),
     )
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/auth/me", headers={"Authorization": f"Bearer {expired}"}
         )
 
     assert response.status_code == 401
+
+
+# --- authentication and authorization answer different questions ------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", [
+    ("get", "/admin/trades"),
+    ("post", "/game/advance-quarter"),
+    ("get", "/portfolio/summary"),
+])
+async def test_no_credential_is_401_and_a_wrong_one_is_403(
+    ordinary_user_and_token, method, path
+):
+    """Two different refusals, and they must stay different.
+
+    A caller with no Authorization header has not said who they are: 401, with
+    the challenge. A caller holding a valid token who lacks the role has said
+    who they are and been refused: 403. Collapsing the two tells an anonymous
+    caller they are forbidden, and an unauthorised one that their credentials
+    were not understood.
+    """
+    _, _, headers = ordinary_user_and_token
+
+    async with api_client() as client:
+        anonymous = await getattr(client, method)(path)
+        identified = await getattr(client, method)(path, headers=headers)
+
+    assert anonymous.status_code == 401
+    assert anonymous.headers.get("www-authenticate")
+    # /portfolio/summary is a player endpoint, so an ordinary player is allowed
+    # in; the admin ones refuse them.
+    assert identified.status_code in (200, 403)
+    if path.startswith("/admin") or path == "/game/advance-quarter":
+        assert identified.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_player_cannot_renovate_somebody_elses_property(
+    test_user_and_token, ordinary_user_and_token
+):
+    """Ownership is checked per resource, and here is the test that tries it.
+
+    /game/renovate is the one endpoint that resolves the holding to a portfolio
+    and compares it to the caller. Nothing exercised that path with the wrong
+    caller, so the check could have been deleted without a single test noticing.
+    """
+    owner, _, _ = test_user_and_token
+    _, _, intruder_headers = ordinary_user_and_token
+
+    db = get_database()
+    portfolio = await db.portfolios.find_one({"userId": owner["user_id"]})
+    renovation = await db.renovations.find_one({})
+    prop = await db.properties.insert_one({
+        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
+        "epc": 0.5, "state": 0.5, "kitchen": 0.5, "bath": 0.5, "base_ppm": 3000,
+    })
+    holding = await db.holdings.insert_one({
+        "portfolioId": portfolio["_id"],
+        "propertyId": prop.inserted_id,
+        "buyPrice": 250_000.0,
+        "buyDate": datetime(2020, 1, 1),
+        "works": [],
+    })
+
+    async with api_client() as client:
+        response = await client.post("/game/renovate", headers=intruder_headers, json={
+            "holdingId": str(holding.inserted_id),
+            "renoCode": renovation["code"],
+        })
+
+    assert response.status_code == 403
+
+    # And nothing happened: no work queued, no money moved.
+    stored = await db.holdings.find_one({"_id": holding.inserted_id})
+    assert stored["works"] == []
+    owner_portfolio = await db.portfolios.find_one({"_id": portfolio["_id"]})
+    assert owner_portfolio["cash"] == pytest.approx(portfolio["cash"])
+
+
+@pytest.mark.asyncio
+async def test_the_owner_can_renovate_their_own_property(test_user_and_token):
+    """The ownership check must refuse the intruder without refusing the owner."""
+    owner, _, headers = test_user_and_token
+
+    db = get_database()
+    portfolio = await db.portfolios.find_one({"userId": owner["user_id"]})
+    renovation = await db.renovations.find_one({})
+    prop = await db.properties.insert_one({
+        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
+        "epc": 0.5, "state": 0.5, "kitchen": 0.5, "bath": 0.5, "base_ppm": 3000,
+    })
+    holding = await db.holdings.insert_one({
+        "portfolioId": portfolio["_id"],
+        "propertyId": prop.inserted_id,
+        "buyPrice": 250_000.0,
+        "buyDate": datetime(2020, 1, 1),
+        "works": [],
+    })
+
+    async with api_client() as client:
+        response = await client.post("/game/renovate", headers=headers, json={
+            "holdingId": str(holding.inserted_id),
+            "renoCode": renovation["code"],
+        })
+
+    assert response.status_code == 200, response.text
+    stored = await db.holdings.find_one({"_id": holding.inserted_id})
+    assert len(stored["works"]) == 1

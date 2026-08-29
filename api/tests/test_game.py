@@ -6,10 +6,9 @@ from datetime import datetime
 
 import pytest
 from bson import ObjectId
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
@@ -25,7 +24,7 @@ async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
 @pytest.mark.asyncio
 async def test_renovation_catalog_public():
     """The renovation catalog is public and seeded."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/game/renovations")
         assert response.status_code == 200
         data = response.json()
@@ -36,7 +35,7 @@ async def test_renovation_catalog_public():
 
 @pytest.mark.asyncio
 async def test_current_quarter_endpoint():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/game/current-quarter")
         assert response.status_code == 200
         assert response.json()["quarter"] == "2020-1"
@@ -44,17 +43,21 @@ async def test_current_quarter_endpoint():
 
 @pytest.mark.asyncio
 async def test_renovate_requires_auth():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate", json={"holdingId": str(ObjectId()), "renoCode": "KITCHEN"}
         )
-        assert response.status_code == 403
+        # No Authorization header at all: 401. FastAPI's HTTPBearer used to
+        # answer 403 here, which said "you may not" to a caller who had not
+        # yet said who they were. 401 is the answer to a missing credential;
+        # 403 is what an identified caller without the role gets.
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_renovate_holding_not_found(test_user_and_token):
     user_data, token, headers = test_user_and_token
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate", headers=headers,
             json={"holdingId": str(ObjectId()), "renoCode": "KITCHEN"}
@@ -72,7 +75,7 @@ async def test_renovate_unknown_code(test_user_and_token):
         "portfolioId": portfolio["_id"], "propertyId": prop_id,
         "buyPrice": 300000, "buyDate": datetime.utcnow(), "works": [],
     })
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate", headers=headers,
             json={"holdingId": str(holding.inserted_id), "renoCode": "NOPE"}
@@ -91,7 +94,7 @@ async def test_renovate_insufficient_funds(test_user_and_token):
         "portfolioId": portfolio["_id"], "propertyId": prop_id,
         "buyPrice": 300000, "buyDate": datetime.utcnow(), "works": [],
     })
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate", headers=headers,
             json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"}
@@ -112,7 +115,7 @@ async def test_renovate_success_deducts_cash_and_adds_work(test_user_and_token):
     })
     reno = await db.renovations.find_one({"code": "KITCHEN"})
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/game/renovate", headers=headers,
             json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"}
@@ -151,7 +154,7 @@ async def test_advance_quarter_completes_renovation_and_updates_prices(test_user
     })
     epc_before = (await db.properties.find_one({"_id": prop_id}))["epc"]
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/game/advance-quarter", headers=headers)
         assert response.status_code == 200
         data = response.json()

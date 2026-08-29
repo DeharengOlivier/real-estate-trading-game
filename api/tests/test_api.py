@@ -4,16 +4,15 @@ Tests for Real Estate Game API
 from datetime import datetime
 
 import pytest
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 @pytest.mark.asyncio
 async def test_health_check():
     """Test health check endpoint"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
@@ -59,7 +58,7 @@ async def test_buy_reduces_cash_and_creates_holding(test_user_and_token):
     initial_cash = portfolio["cash"]
 
     # Test: Buy property with authentication
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/buy",
             json={"propertyId": str(property_result.inserted_id)},
@@ -145,7 +144,7 @@ async def test_sell_creates_trade_and_removes_holding(test_user_and_token):
     })
 
     # Test: Sell property with authentication
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post(
             "/trading/sell",
             json={"propertyId": str(property_result.inserted_id)},
@@ -188,7 +187,7 @@ async def test_listings_filters():
         })
 
     # Test: Filter by zone
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/trading/listings?zone=Bruxelles-Centre")
         assert response.status_code == 200
         data = response.json()

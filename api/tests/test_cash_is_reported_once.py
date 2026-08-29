@@ -7,10 +7,9 @@ account's life no matter how much had been spent. Two fields holding the same
 quantity is one field holding a lie.
 """
 import pytest
-from httpx import AsyncClient
 
 from api.database import get_database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 async def _register(client, username="spender"):
@@ -41,7 +40,7 @@ async def test_the_balance_reported_after_a_purchase_is_the_one_that_was_charged
     db = get_database()
     property_id = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         registration = await _register(client)
         headers = {"Authorization": f"Bearer {registration['access_token']}"}
 
@@ -60,7 +59,7 @@ async def test_logging_back_in_reports_the_same_balance():
     db = get_database()
     property_id = await _create_listing(db, 200_000.0)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         registration = await _register(client)
         headers = {"Authorization": f"Bearer {registration['access_token']}"}
         await client.post("/trading/buy", headers=headers,
@@ -76,7 +75,7 @@ async def test_logging_back_in_reports_the_same_balance():
 @pytest.mark.asyncio
 async def test_the_user_document_does_not_carry_a_second_balance():
     """Names the defect: one quantity, one place to read it."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await _register(client)
 
     db = get_database()
@@ -88,7 +87,7 @@ async def test_the_user_document_does_not_carry_a_second_balance():
 
 @pytest.mark.asyncio
 async def test_a_fresh_account_starts_with_the_advertised_amount():
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         registration = await _register(client)
         headers = {"Authorization": f"Bearer {registration['access_token']}"}
         me = await client.get("/auth/me", headers=headers)

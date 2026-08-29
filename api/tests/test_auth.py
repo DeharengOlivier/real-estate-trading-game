@@ -2,16 +2,15 @@
 Tests for authentication endpoints
 """
 import pytest
-from httpx import AsyncClient
 
 import api.database as database
-from api.main import app
+from api.tests.conftest import api_client
 
 
 @pytest.mark.asyncio
 async def test_register_user_success():
     """Test successful user registration"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/register", json={
             "username": "newuser",
             "email": "newuser@example.com",
@@ -30,7 +29,7 @@ async def test_register_user_success():
 @pytest.mark.asyncio
 async def test_register_weak_password():
     """Test registration with weak password fails"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/register", json={
             "username": "weakuser",
             "email": "weak@example.com",
@@ -45,7 +44,7 @@ async def test_register_weak_password():
 async def test_register_duplicate_username():
     """Test registration with existing username fails"""
     # First registration
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         await client.post("/auth/register", json={
             "username": "duplicate",
             "email": "first@example.com",
@@ -71,7 +70,7 @@ async def test_login_success(test_user_and_token):
     """Test successful login"""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/login", json={
             "username": user_data["username"],
             "password": user_data["password"]
@@ -87,7 +86,7 @@ async def test_login_success(test_user_and_token):
 @pytest.mark.asyncio
 async def test_login_wrong_password():
     """Test login with incorrect password"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         # First create a user
         await client.post("/auth/register", json={
             "username": "testlogin",
@@ -109,7 +108,7 @@ async def test_login_wrong_password():
 @pytest.mark.asyncio
 async def test_login_nonexistent_user():
     """Test login with non-existent username"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.post("/auth/login", json={
             "username": "nonexistent",
             "password": "AnyPass123"
@@ -121,7 +120,7 @@ async def test_login_nonexistent_user():
 @pytest.mark.asyncio
 async def test_rate_limiting_on_login():
     """Test that login endpoint is rate limited"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         # Make multiple failed login attempts
         for i in range(6):  # MAX_LOGIN_ATTEMPTS is 5
             response = await client.post("/auth/login", json={
@@ -141,17 +140,20 @@ async def test_rate_limiting_on_login():
 @pytest.mark.asyncio
 async def test_protected_endpoint_without_token():
     """Test that protected endpoints require authentication"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary")
 
-        # FastAPI returns 403 when credentials are not provided
-        assert response.status_code == 403
+        # No Authorization header at all: 401. FastAPI's HTTPBearer used to
+        # answer 403 here, which said "you may not" to a caller who had not
+        # yet said who they were. 401 is the answer to a missing credential;
+        # 403 is what an identified caller without the role gets.
+        assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_protected_endpoint_with_invalid_token():
     """Test that protected endpoints reject invalid tokens"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get(
             "/portfolio/summary",
             headers={"Authorization": "Bearer invalid_token_here"}
@@ -165,7 +167,7 @@ async def test_protected_endpoint_with_valid_token(test_user_and_token):
     """Test that protected endpoints work with valid tokens"""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/portfolio/summary", headers=headers)
 
         assert response.status_code == 200
@@ -179,7 +181,7 @@ async def test_me_returns_current_user(test_user_and_token):
     """The /auth/me endpoint returns the authenticated user's profile."""
     user_data, token, headers = test_user_and_token
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         response = await client.get("/auth/me", headers=headers)
         assert response.status_code == 200
         data = response.json()
@@ -192,7 +194,7 @@ async def test_me_returns_current_user(test_user_and_token):
 @pytest.mark.asyncio
 async def test_register_then_login_roundtrip():
     """A freshly registered user can immediately log in."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         register = await client.post("/auth/register", json={
             "username": "newuser",
             "email": "newuser@example.com",
@@ -215,7 +217,7 @@ async def test_rate_limiting_fallback_without_redis(monkeypatch):
     # Force the Redis-less code path.
     monkeypatch.setattr(database, "redis_client", None)
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         statuses = []
         for _ in range(6):
             response = await client.post("/auth/login", json={
@@ -230,7 +232,7 @@ async def test_rate_limiting_fallback_without_redis(monkeypatch):
 @pytest.mark.asyncio
 async def test_rate_limit_is_per_username():
     """Hitting the limit for one user does not block a different user."""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with api_client() as client:
         for _ in range(6):
             await client.post("/auth/login", json={
                 "username": "ratelimit", "password": "WrongPass123"
