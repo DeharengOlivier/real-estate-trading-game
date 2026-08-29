@@ -22,9 +22,10 @@ what to report.
   with no credential gets 401. The frontend hides those controls, but that is
   presentation only: hiding a button changes nothing about what the API accepts.
 - **Ownership is checked per resource, not per role.** `/game/renovate` and
-  `/trading/sell` act on a holding only after matching it to the caller's own
-  portfolio, so knowing another player's holding id gets you a 404, not their
-  property.
+  `/trading/sell` look a holding up inside the caller's own portfolio rather
+  than looking it up globally and comparing owners afterwards. Knowing another
+  player's holding id therefore gets you a 404, which is also the answer for an
+  id that does not exist: the refusal does not confirm that the id is real.
 - **The application refuses to start without a signing key.** There is no
   fallback `SECRET_KEY`, no placeholder, and a key shorter than 32 characters
   or equal to one published in this repository is rejected at import time. A

@@ -371,6 +371,9 @@ async def test_a_player_cannot_renovate_somebody_elses_property(
     /game/renovate is the one endpoint that resolves the holding to a portfolio
     and compares it to the caller. Nothing exercised that path with the wrong
     caller, so the check could have been deleted without a single test noticing.
+
+    The refusal is a 404 rather than a 403, matching /trading/sell: a 403 would
+    tell the caller that the holding id it guessed is a real one.
     """
     owner, _, _ = test_user_and_token
     _, _, intruder_headers = ordinary_user_and_token
@@ -410,7 +413,7 @@ async def test_a_player_cannot_renovate_somebody_elses_property(
             },
         )
 
-    assert response.status_code == 403
+    assert response.status_code == 404
 
     # And nothing happened: no work queued, no money moved.
     stored = await db.holdings.find_one({"_id": holding.inserted_id})

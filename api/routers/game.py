@@ -61,17 +61,17 @@ async def start_renovation(
 
     holding_id = ObjectId(request.holdingId)
 
-    # Get holding
-    holding = await db.holdings.find_one({"_id": holding_id})
+    # The caller's own portfolio is the scope of the lookup, so a holding that
+    # belongs to somebody else is simply not found. Fetching the holding first
+    # and comparing owners afterwards answers 403, which confirms that the id
+    # exists: an attacker with a list of ids learns which of them are real.
+    portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    holding = await db.holdings.find_one({"_id": holding_id, "portfolioId": portfolio["_id"]})
     if not holding:
         raise HTTPException(status_code=404, detail="Holding not found")
-
-    # Verify holding belongs to user's portfolio
-    portfolio = await db.portfolios.find_one(
-        {"_id": holding["portfolioId"], "userId": current_user["_id"]}
-    )
-    if not portfolio:
-        raise HTTPException(status_code=403, detail="Not authorized to renovate this property")
 
     # Get renovation
     renovation = await db.renovations.find_one({"code": request.renoCode})
