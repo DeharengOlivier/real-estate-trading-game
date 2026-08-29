@@ -39,9 +39,11 @@ what to report.
   design does and does not cover.
 - **Identifiers from a request are parsed, not trusted.** A malformed object id
   is a 400 with a message, never a 500 with a stack trace.
-- **A failed login is countable.** Login is rate limited to 5 attempts per 5
-  minutes, and refusals are logged as structured security events with a request
-  id, without the password or the token.
+- **The two unauthenticated routes are bounded.** Login is limited to 5
+  attempts per username per 5 minutes, and registration to 5 accounts per
+  calling address per hour, checked before any password is hashed. Refusals are
+  logged as structured security events with a request id, without the password
+  or the token.
 
 ## What is deliberately out of scope
 

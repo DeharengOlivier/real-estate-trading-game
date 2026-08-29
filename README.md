@@ -350,9 +350,12 @@ An honest list of what is still true.
   `docs/adr/0001-conditional-writes-instead-of-transactions.md`.
 - **Tokens live 24 hours with no rotation and no revocation list.** Logging out
   drops the token in the browser; it stays valid until it expires.
-- **Rate limiting covers login only**, and its fallback is per process. A
-  deployment with more than one replica, or more than one uvicorn worker, needs
-  Redis to be present rather than optional.
+- **Rate limiting covers login and registration**, not the trading routes, and
+  its in-memory fallback counts per process. A deployment with more than one
+  replica, or more than one uvicorn worker, needs Redis to be present rather
+  than optional. Behind a reverse proxy, uvicorn must run with `--proxy-headers`
+  and a trusted `--forwarded-allow-ips`, or every caller shares the proxy's
+  address and therefore one registration budget.
 - **Trade orchestration still lives in the routers.** The pricing model is in
   `simulation/` and `services.py`; the buy and sell flows are not yet behind a
   domain layer, so they can only be tested through HTTP.

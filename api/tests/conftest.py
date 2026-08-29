@@ -82,14 +82,21 @@ class Rendezvous:
             )
 
 
-def api_client() -> AsyncClient:
+def api_client(client_host: str = "127.0.0.1") -> AsyncClient:
     """An httpx client wired straight to the ASGI app, no socket involved.
 
     Every test builds its client through this, so the transport is described
     once. httpx 0.28 removed the ``app=`` shortcut in favour of an explicit
     ASGITransport; the next such change is one edit here.
+
+    ``client_host`` is what ``request.client.host`` will report, which is what
+    the registration rate limit is keyed on. Tests that need two callers from
+    two addresses pass two different values.
     """
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    return AsyncClient(
+        transport=ASGITransport(app=app, client=(client_host, 123)),
+        base_url="http://test",
+    )
 
 
 class CountingCollection:

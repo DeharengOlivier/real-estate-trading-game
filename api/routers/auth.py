@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import timedelta
 from itertools import count
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
 
 from api.auth import (
@@ -32,6 +32,15 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # Constants for rate limiting
 LOGIN_ATTEMPT_LIMIT = 5
 LOGIN_ATTEMPT_TIMEFRAME = 300  # 5 minutes in seconds
+
+# Registration is the more expensive of the two calls: it hashes a password
+# with bcrypt and inserts a user and a portfolio holding the starting cash.
+# Keyed on the caller's address rather than the username, because the username
+# on a registration is whatever the caller has just invented, so limiting per
+# username limits nobody.
+REGISTRATION_LIMIT = 5
+REGISTRATION_TIMEFRAME = 3600  # 1 hour in seconds
+
 fallback_login_attempts: defaultdict[str, list[float]] = defaultdict(list)
 
 # Monotonic counter used to build unique sorted-set members so that several
@@ -40,57 +49,95 @@ fallback_login_attempts: defaultdict[str, list[float]] = defaultdict(list)
 _attempt_sequence = count()
 
 
-async def check_rate_limit(username: str) -> bool:
-    """Check if a user has exceeded login rate limits using Redis"""
+async def enforce_rate_limit(
+    bucket: str, subject: str, limit: int, window: int, detail: str
+) -> bool:
+    """Count one attempt in a sliding window, and refuse past `limit`.
+
+    `bucket` names what is being limited and keeps counters apart: a caller
+    that has used up its registrations still has its login attempts. `subject`
+    is what the count is per: a username for login, a client address for
+    registration.
+
+    The Redis path is the real one. The in-memory fallback exists so a stack
+    without Redis is limited rather than unlimited, but it counts per process:
+    with several workers or replicas each keeps its own tally, so a deployment
+    that means it needs Redis present rather than optional.
+    """
     redis = get_redis_client()
     now = time.time()
+    key = f"{bucket}:{subject}"
 
     if redis is None:
-        # Fallback to in-memory rate limiting if Redis is unavailable
-        attempts = [
-            t for t in fallback_login_attempts[username] if now - t < LOGIN_ATTEMPT_TIMEFRAME
-        ]
+        attempts = [t for t in fallback_login_attempts[key] if now - t < window]
         attempts.append(now)
-        fallback_login_attempts[username] = attempts
+        fallback_login_attempts[key] = attempts
 
-        if len(attempts) > LOGIN_ATTEMPT_LIMIT:
-            log_security_event(logger, "rate_limit_reached", username=username, store="memory")
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many login attempts. Try again in 5 minutes.",
+        if len(attempts) > limit:
+            log_security_event(
+                logger, "rate_limit_reached", bucket=bucket, subject=subject, store="memory"
             )
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
         return True
-
-    key = f"login_attempts:{username}"
 
     # Use a unique member per attempt (timestamp + monotonic counter) so that
     # multiple attempts within the same second are not collapsed into a single
     # sorted-set entry. The score stays as the timestamp for window pruning.
     member = f"{now:.6f}:{next(_attempt_sequence)}"
 
-    # Start a transaction
     async with redis.pipeline(transaction=True) as pipe:
-        # Remove timestamps older than the timeframe
-        pipe.zremrangebyscore(key, 0, now - LOGIN_ATTEMPT_TIMEFRAME)
-        # Add the current login attempt
+        # Drop what has fallen out of the window, record this attempt, let the
+        # key expire on its own, and read the count back, in one round trip.
+        pipe.zremrangebyscore(key, 0, now - window)
         pipe.zadd(key, {member: now})
-        # Set an expiration on the key to auto-clean old data
-        pipe.expire(key, LOGIN_ATTEMPT_TIMEFRAME)
-        # Get the count of recent attempts
+        pipe.expire(key, window)
         pipe.zcard(key)
 
         results = await pipe.execute()
 
-    attempt_count = results[-1]
-
-    if attempt_count > LOGIN_ATTEMPT_LIMIT:
-        log_security_event(logger, "rate_limit_reached", username=username, store="redis")
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Try again in 5 minutes.",
+    if results[-1] > limit:
+        log_security_event(
+            logger, "rate_limit_reached", bucket=bucket, subject=subject, store="redis"
         )
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
 
     return True
+
+
+async def check_rate_limit(username: str) -> bool:
+    """Bound login attempts per username."""
+    return await enforce_rate_limit(
+        "login_attempts",
+        username,
+        LOGIN_ATTEMPT_LIMIT,
+        LOGIN_ATTEMPT_TIMEFRAME,
+        "Too many login attempts. Try again in 5 minutes.",
+    )
+
+
+def caller_address(request: Request) -> str:
+    """The address to key a per-caller limit on.
+
+    `request.client` is the peer of the TCP connection, which is the caller
+    when the API is reached directly and the proxy when it is not. A deployment
+    behind a proxy has to run uvicorn with --proxy-headers and a trusted
+    forwarded-allow-ips, so that the peer is resolved from the forwarding
+    headers by something that knows which proxy to believe. Reading
+    X-Forwarded-For here instead would let any caller choose its own key, and
+    with it its own limit.
+    """
+    return request.client.host if request.client else "unknown"
+
+
+async def check_registration_rate_limit(request: Request) -> bool:
+    """Bound account creation per calling address."""
+    return await enforce_rate_limit(
+        "registrations",
+        caller_address(request),
+        REGISTRATION_LIMIT,
+        REGISTRATION_TIMEFRAME,
+        "Too many accounts created from this address. Try again later.",
+    )
 
 
 def _duplicated_field(conflict: DuplicateKeyError) -> str:
@@ -117,7 +164,7 @@ async def _cash_of(db, user_id) -> float:
 
 
 @router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserRegister):
+async def register(user_data: UserRegister, request: Request):
     """
     Register a new user
 
@@ -126,7 +173,13 @@ async def register(user_data: UserRegister):
     - Strong password (hashed with bcrypt)
     - A portfolio holding the starting cash
     - Default role: "user"
+
+    Bounded per calling address, before any of that work is done.
     """
+    # First, so a refused caller pays for no bcrypt hash and leaves no user
+    # and no portfolio behind.
+    await check_registration_rate_limit(request)
+
     db = get_database()
 
     # The password rule is stated once, on UserRegister, and enforced before
