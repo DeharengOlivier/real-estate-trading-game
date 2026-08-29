@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { api } from './api'
 import './App.css'
 import Login from './components/Login'
 import Market from './components/Market'
-import Portfolio from './components/Portfolio'
+
+// Portfolio is the only view that draws a chart, and recharts is most of the
+// bundle. Loading it on demand keeps the first paint, which is the market,
+// off that download.
+const Portfolio = lazy(() => import('./components/Portfolio'))
 
 function App() {
   const [user, setUser] = useState(null)
@@ -242,11 +246,13 @@ function App() {
             isAdmin={isAdmin}
           />
         ) : (
-          <Portfolio 
-            key={portfolioRefreshKey} 
-            onSell={refreshData} 
-            showMessage={showMessage} 
-          />
+          <Suspense fallback={<div className="empty-state">Loading the portfolio...</div>}>
+            <Portfolio
+              key={portfolioRefreshKey}
+              onSell={refreshData}
+              showMessage={showMessage}
+            />
+          </Suspense>
         )}
       </main>
     </div>
