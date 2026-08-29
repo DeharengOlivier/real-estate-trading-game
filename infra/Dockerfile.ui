@@ -1,10 +1,12 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app/ui
 
-# Install dependencies
-COPY ui/package*.json ./
-RUN npm install
+# Install exactly what the lockfile says. `npm ci` fails if package.json and
+# package-lock.json disagree, which is the point: the image is built from a
+# resolved dependency set, not from whatever resolves on build day.
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
 
 # Copy application
 COPY ui .
