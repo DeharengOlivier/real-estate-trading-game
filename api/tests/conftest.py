@@ -7,6 +7,7 @@ The test suite runs with NO external services: MongoDB is replaced by
 ``api.database`` so the application code (and its ``get_database`` /
 ``get_redis_client`` accessors) work unchanged.
 """
+
 import asyncio
 import contextlib
 import os
@@ -17,9 +18,7 @@ from typing import Any
 # the check. Provide one before anything imports the application. setdefault,
 # not assignment: a developer running with a real key in their environment
 # keeps it, and the suite still exercises the same code path.
-os.environ.setdefault(
-    "SECRET_KEY", "test-only-signing-key-do-not-use-outside-the-test-suite"
-)
+os.environ.setdefault("SECRET_KEY", "test-only-signing-key-do-not-use-outside-the-test-suite")
 
 import fakeredis.aioredis as fakeredis
 import pytest
@@ -97,10 +96,18 @@ class CountingCollection:
     """Forward every call to a real collection, counting the round trips."""
 
     _COUNTED = (
-        "find", "find_one", "count_documents", "aggregate",
-        "insert_one", "insert_many", "update_one", "update_many",
-        "delete_one", "delete_many",
-        "find_one_and_update", "find_one_and_delete",
+        "find",
+        "find_one",
+        "count_documents",
+        "aggregate",
+        "insert_one",
+        "insert_many",
+        "update_one",
+        "update_many",
+        "delete_one",
+        "delete_many",
+        "find_one_and_update",
+        "find_one_and_delete",
     )
 
     def __init__(self, collection, tally, name):
@@ -214,19 +221,20 @@ async def _seed_baseline(db):
     from simulation.constants import RENOVATIONS, ZONES
 
     locals_data = [
-        {"zone": z, "access": 0.0, "attract": 0.0, "nuisance": 0.05, "tension": 0.0}
-        for z in ZONES
+        {"zone": z, "access": 0.0, "attract": 0.0, "nuisance": 0.05, "tension": 0.0} for z in ZONES
     ]
-    await db.marketindex.insert_one({
-        "t": "2020-1",
-        "inflation": 0.02,
-        "rate": 0.015,
-        "income": 0.01,
-        "unemployment": 0.05,
-        "confidence": 0.0,
-        "policy": 0.0,
-        "locals": locals_data,
-    })
+    await db.marketindex.insert_one(
+        {
+            "t": "2020-1",
+            "inflation": 0.02,
+            "rate": 0.015,
+            "income": 0.01,
+            "unemployment": 0.05,
+            "confidence": 0.0,
+            "policy": 0.0,
+            "locals": locals_data,
+        }
+    )
 
     await db.renovations.insert_many([dict(r) for r in RENOVATIONS])
 
@@ -246,6 +254,7 @@ async def setup_database():
     if database.redis_client is not None:
         await database.redis_client.flushall()
     from api.routers import auth as auth_router
+
     auth_router.fallback_login_attempts.clear()
 
     await _seed_baseline(db)
@@ -273,20 +282,26 @@ async def test_user_and_token():
     result = await db.users.insert_one(user_data)
     user_id = result.inserted_id
 
-    await db.portfolios.insert_one({
-        "userId": user_id,
-        "cash": 1000000.0,
-        "createdAt": datetime.utcnow(),
-    })
+    await db.portfolios.insert_one(
+        {
+            "userId": user_id,
+            "cash": 1000000.0,
+            "createdAt": datetime.utcnow(),
+        }
+    )
 
     token = create_access_token(data={"sub": str(user_id)})
     headers = {"Authorization": f"Bearer {token}"}
 
-    return {
-        "username": "testuser",
-        "password": password,
-        "user_id": user_id,
-    }, token, headers
+    return (
+        {
+            "username": "testuser",
+            "password": password,
+            "user_id": user_id,
+        },
+        token,
+        headers,
+    )
 
 
 @pytest_asyncio.fixture
@@ -301,21 +316,25 @@ async def ordinary_user_and_token():
     db = database.get_database()
 
     password = "PlayerPassword123"
-    result = await db.users.insert_one({
-        "username": "player",
-        "email": "player@example.com",
-        "name": "Ordinary Player",
-        "hashedPassword": get_password_hash(password),
-        "roles": ["user"],
-        "createdAt": datetime.utcnow(),
-    })
+    result = await db.users.insert_one(
+        {
+            "username": "player",
+            "email": "player@example.com",
+            "name": "Ordinary Player",
+            "hashedPassword": get_password_hash(password),
+            "roles": ["user"],
+            "createdAt": datetime.utcnow(),
+        }
+    )
     user_id = result.inserted_id
 
-    await db.portfolios.insert_one({
-        "userId": user_id,
-        "cash": 1000000.0,
-        "createdAt": datetime.utcnow(),
-    })
+    await db.portfolios.insert_one(
+        {
+            "userId": user_id,
+            "cash": 1000000.0,
+            "createdAt": datetime.utcnow(),
+        }
+    )
 
     token = create_access_token(data={"sub": str(user_id)})
     return (
@@ -335,20 +354,24 @@ async def legacy_user_and_token():
     """
     db = database.get_database()
 
-    result = await db.users.insert_one({
-        "username": "legacy",
-        "email": "legacy@example.com",
-        "name": "Legacy User",
-        "hashedPassword": get_password_hash("LegacyPassword123"),
-        "createdAt": datetime.utcnow(),
-    })
+    result = await db.users.insert_one(
+        {
+            "username": "legacy",
+            "email": "legacy@example.com",
+            "name": "Legacy User",
+            "hashedPassword": get_password_hash("LegacyPassword123"),
+            "createdAt": datetime.utcnow(),
+        }
+    )
     user_id = result.inserted_id
 
-    await db.portfolios.insert_one({
-        "userId": user_id,
-        "cash": 1000000.0,
-        "createdAt": datetime.utcnow(),
-    })
+    await db.portfolios.insert_one(
+        {
+            "userId": user_id,
+            "cash": 1000000.0,
+            "createdAt": datetime.utcnow(),
+        }
+    )
 
     token = create_access_token(data={"sub": str(user_id)})
     return (

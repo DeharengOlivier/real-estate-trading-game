@@ -1,6 +1,7 @@
 """
 Database connection and utilities
 """
+
 import os
 from typing import Any
 

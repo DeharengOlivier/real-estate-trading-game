@@ -2,6 +2,7 @@
 Tests for the game router: renovation catalog, starting renovations,
 advancing quarters, and current-quarter reporting.
 """
+
 from datetime import datetime
 
 import pytest
@@ -11,13 +12,20 @@ from api.database import get_database
 from api.tests.conftest import api_client
 
 
-async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
-                        base_ppm=4000):
-    result = await db.properties.insert_one({
-        "zone": zone, "type": type_, "surface": surface,
-        "epc": 0.5, "state": 0.6, "kitchen": 0.6, "bath": 0.6,
-        "base_ppm": base_ppm, "createdAt": datetime.utcnow(),
-    })
+async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80, base_ppm=4000):
+    result = await db.properties.insert_one(
+        {
+            "zone": zone,
+            "type": type_,
+            "surface": surface,
+            "epc": 0.5,
+            "state": 0.6,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": base_ppm,
+            "createdAt": datetime.utcnow(),
+        }
+    )
     return result.inserted_id
 
 
@@ -59,8 +67,9 @@ async def test_renovate_holding_not_found(test_user_and_token):
     user_data, token, headers = test_user_and_token
     async with api_client() as client:
         response = await client.post(
-            "/game/renovate", headers=headers,
-            json={"holdingId": str(ObjectId()), "renoCode": "KITCHEN"}
+            "/game/renovate",
+            headers=headers,
+            json={"holdingId": str(ObjectId()), "renoCode": "KITCHEN"},
         )
         assert response.status_code == 404
 
@@ -71,14 +80,20 @@ async def test_renovate_unknown_code(test_user_and_token):
     db = get_database()
     prop_id = await _add_property(db)
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"], "propertyId": prop_id,
-        "buyPrice": 300000, "buyDate": datetime.utcnow(), "works": [],
-    })
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": 300000,
+            "buyDate": datetime.utcnow(),
+            "works": [],
+        }
+    )
     async with api_client() as client:
         response = await client.post(
-            "/game/renovate", headers=headers,
-            json={"holdingId": str(holding.inserted_id), "renoCode": "NOPE"}
+            "/game/renovate",
+            headers=headers,
+            json={"holdingId": str(holding.inserted_id), "renoCode": "NOPE"},
         )
         assert response.status_code == 404
 
@@ -90,14 +105,20 @@ async def test_renovate_insufficient_funds(test_user_and_token):
     prop_id = await _add_property(db)
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
     await db.portfolios.update_one({"_id": portfolio["_id"]}, {"$set": {"cash": 100.0}})
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"], "propertyId": prop_id,
-        "buyPrice": 300000, "buyDate": datetime.utcnow(), "works": [],
-    })
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": 300000,
+            "buyDate": datetime.utcnow(),
+            "works": [],
+        }
+    )
     async with api_client() as client:
         response = await client.post(
-            "/game/renovate", headers=headers,
-            json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"}
+            "/game/renovate",
+            headers=headers,
+            json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"},
         )
         assert response.status_code == 400
         assert "insufficient" in response.json()["detail"].lower()
@@ -109,16 +130,22 @@ async def test_renovate_success_deducts_cash_and_adds_work(test_user_and_token):
     db = get_database()
     prop_id = await _add_property(db)
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"], "propertyId": prop_id,
-        "buyPrice": 300000, "buyDate": datetime.utcnow(), "works": [],
-    })
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": 300000,
+            "buyDate": datetime.utcnow(),
+            "works": [],
+        }
+    )
     reno = await db.renovations.find_one({"code": "KITCHEN"})
 
     async with api_client() as client:
         response = await client.post(
-            "/game/renovate", headers=headers,
-            json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"}
+            "/game/renovate",
+            headers=headers,
+            json={"holdingId": str(holding.inserted_id), "renoCode": "KITCHEN"},
         )
         assert response.status_code == 200
         data = response.json()
@@ -140,18 +167,27 @@ async def test_advance_quarter_completes_renovation_and_updates_prices(test_user
     db = get_database()
 
     prop_id = await _add_property(db, zone="Bruxelles-Centre", surface=100, base_ppm=4200)
-    await db.listings.insert_one({
-        "propertyId": prop_id, "isAvailable": False,
-        "lastComputedPrice": 420000, "lastT": "2020-1",
-    })
+    await db.listings.insert_one(
+        {
+            "propertyId": prop_id,
+            "isAvailable": False,
+            "lastComputedPrice": 420000,
+            "lastT": "2020-1",
+        }
+    )
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
     reno = await db.renovations.find_one({"code": "HEATING"})  # durationQ = 1
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"], "propertyId": prop_id,
-        "buyPrice": 400000, "buyDate": datetime.utcnow(),
-        "works": [{"renoId": reno["_id"], "startT": "2020-1",
-                   "endT": "2020-2", "status": "ongoing"}],
-    })
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": 400000,
+            "buyDate": datetime.utcnow(),
+            "works": [
+                {"renoId": reno["_id"], "startT": "2020-1", "endT": "2020-2", "status": "ongoing"}
+            ],
+        }
+    )
     epc_before = (await db.properties.find_one({"_id": prop_id}))["epc"]
 
     async with api_client() as client:

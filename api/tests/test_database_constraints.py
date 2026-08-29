@@ -7,6 +7,7 @@ the two people owns it depends on insertion order.
 
 An application-level check is advisory. A unique index is the constraint.
 """
+
 import asyncio
 
 import pytest
@@ -70,12 +71,15 @@ def overlap_two_registrations(monkeypatch):
 
 
 async def _register(client, username, email=None):
-    return await client.post("/auth/register", json={
-        "username": username,
-        "email": email or f"{username}@example.com",
-        "name": "Somebody",
-        "password": "SomePassword123",
-    })
+    return await client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "email": email or f"{username}@example.com",
+            "name": "Somebody",
+            "password": "SomePassword123",
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -84,8 +88,7 @@ async def test_the_username_carries_a_unique_index():
     indexes = await db.users.index_information()
 
     unique_on_username = [
-        spec for spec in indexes.values()
-        if spec.get("unique") and spec["key"] == [("username", 1)]
+        spec for spec in indexes.values() if spec.get("unique") and spec["key"] == [("username", 1)]
     ]
     assert unique_on_username, f"no unique index on username: {indexes}"
 
@@ -96,8 +99,7 @@ async def test_the_email_carries_a_unique_index():
     indexes = await db.users.index_information()
 
     unique_on_email = [
-        spec for spec in indexes.values()
-        if spec.get("unique") and spec["key"] == [("email", 1)]
+        spec for spec in indexes.values() if spec.get("unique") and spec["key"] == [("email", 1)]
     ]
     assert unique_on_email, f"no unique index on email: {indexes}"
 

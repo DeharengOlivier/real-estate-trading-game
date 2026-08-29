@@ -2,6 +2,7 @@
 Trading router - Buy/sell properties and market listings
 Single Responsibility: Property transactions and market operations
 """
+
 import logging
 from datetime import datetime
 from typing import Any
@@ -28,7 +29,7 @@ def _first_day_of_quarter(quarter: str) -> datetime:
     Trades are stamped with a game date, not a wall-clock one, so that a chart
     of a portfolio reads against the simulated timeline.
     """
-    year, index = map(int, quarter.split('-'))
+    year, index = map(int, quarter.split("-"))
     return datetime(year, (index - 1) * 3 + 1, 1)
 
 
@@ -38,10 +39,7 @@ async def _release_listing(db, property_id: ObjectId) -> None:
     Called on the two paths that give a claimed property up: a purchase that
     could not be paid for, and a completed sale.
     """
-    await db.listings.update_one(
-        {"propertyId": property_id},
-        {"$set": {"isAvailable": True}}
-    )
+    await db.listings.update_one({"propertyId": property_id}, {"$set": {"isAvailable": True}})
 
 
 @router.get("/listings")
@@ -53,7 +51,7 @@ async def get_listings(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(50, ge=1, le=200, description="Number of results per page"),
     sortBy: str = Query("price", description="Sort by: price, surface, zone"),
-    sortOrder: str = Query("asc", description="Sort order: asc or desc")
+    sortOrder: str = Query("asc", description="Sort order: asc or desc"),
 ):
     """
     Get available property listings with filters and pagination.
@@ -69,14 +67,16 @@ async def get_listings(
     pipeline.append({"$match": {"isAvailable": True}})
 
     # 2. Join with the properties collection
-    pipeline.append({
-        "$lookup": {
-            "from": "properties",
-            "localField": "propertyId",
-            "foreignField": "_id",
-            "as": "property"
+    pipeline.append(
+        {
+            "$lookup": {
+                "from": "properties",
+                "localField": "propertyId",
+                "foreignField": "_id",
+                "as": "property",
+            }
         }
-    })
+    )
 
     # 3. Unwind the property array and filter out listings with no matching property
     pipeline.append({"$unwind": "$property"})
@@ -128,13 +128,11 @@ async def get_listings(
                         "kitchen": "$property.kitchen",
                         "bath": "$property.bath",
                         "basePpm": "$property.base_ppm",
-                        "price": "$lastComputedPrice"
+                        "price": "$lastComputedPrice",
                     }
-                }
+                },
             ],
-            "total": [
-                {"$count": "count"}
-            ]
+            "total": [{"$count": "count"}],
         }
     }
     pipeline.append(facet_stage)
@@ -171,7 +169,7 @@ async def get_listings(
         # Overall quality score
         item["qualityScore"] = round(
             (item["epcScore"] + item["stateScore"] + item["kitchenScore"] + item["bathScore"]) / 4,
-            1
+            1,
         )
 
         # Calculate potential appreciation (estimated value in 1 year if market continues)
@@ -186,7 +184,7 @@ async def get_listings(
         "total": total_count,
         "page": page,
         "limit": limit,
-        "totalPages": (total_count + limit - 1) // limit
+        "totalPages": (total_count + limit - 1) // limit,
     }
 
 
@@ -219,19 +217,18 @@ async def buy_property(request: BuyRequest, current_user: dict = Depends(get_cur
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
-    portfolio_id = portfolio['_id']
+    portfolio_id = portfolio["_id"]
 
     # Claim the listing. find_one_and_update is atomic and returns the document
     # as it was before the write, so the price we pay is the price we claimed.
     listing = await db.listings.find_one_and_update(
-        {"propertyId": property_id, "isAvailable": True},
-        {"$set": {"isAvailable": False}}
+        {"propertyId": property_id, "isAvailable": True}, {"$set": {"isAvailable": False}}
     )
 
     if not listing:
         raise HTTPException(status_code=404, detail="Property not available")
 
-    price = listing['lastComputedPrice']
+    price = listing["lastComputedPrice"]
     fees = price * TRANSACTION_FEE_RATE
     total_cost = price + fees
 
@@ -242,20 +239,22 @@ async def buy_property(request: BuyRequest, current_user: dict = Depends(get_cur
     # a process that dies between them leaves one of the two states behind: a
     # property nobody paid for, or a payment for nothing. The first is the one
     # to prefer, so it is the one this order can produce.
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio_id,
-        "propertyId": property_id,
-        "buyPrice": price,
-        "buyDate": trade_date,
-        "works": []
-    })
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio_id,
+            "propertyId": property_id,
+            "buyPrice": price,
+            "buyDate": trade_date,
+            "works": [],
+        }
+    )
 
     # Debit with the affordability condition in the filter: the balance is read
     # and written in one operation, so it can never go negative.
     debited = await db.portfolios.find_one_and_update(
         {"_id": portfolio_id, "cash": {"$gte": total_cost}},
         {"$inc": {"cash": -total_cost}},
-        return_document=ReturnDocument.AFTER
+        return_document=ReturnDocument.AFTER,
     )
 
     if not debited:
@@ -264,21 +263,23 @@ async def buy_property(request: BuyRequest, current_user: dict = Depends(get_cur
         await db.holdings.delete_one({"_id": holding.inserted_id})
         await _release_listing(db, property_id)
         current = await db.portfolios.find_one({"_id": portfolio_id})
-        available = current['cash'] if current else 0.0
+        available = current["cash"] if current else 0.0
         raise HTTPException(
             status_code=400,
-            detail=f"Insufficient funds. Need {total_cost:,.2f} €, have {available:,.2f} €"
+            detail=f"Insufficient funds. Need {total_cost:,.2f} €, have {available:,.2f} €",
         )
 
-    await db.trades.insert_one({
-        "portfolioId": portfolio_id,
-        "propertyId": property_id,
-        "side": "buy",
-        "price": price,
-        "fees": fees,
-        "ts": trade_date,
-        "quarter": current_quarter
-    })
+    await db.trades.insert_one(
+        {
+            "portfolioId": portfolio_id,
+            "propertyId": property_id,
+            "side": "buy",
+            "price": price,
+            "fees": fees,
+            "ts": trade_date,
+            "quarter": current_quarter,
+        }
+    )
 
     logger.info(f"User {current_user['username']} bought property {property_id} for {price}")
 
@@ -288,7 +289,7 @@ async def buy_property(request: BuyRequest, current_user: dict = Depends(get_cur
         "price": round(price, 2),
         "fees": round(fees, 2),
         "totalCost": round(total_cost, 2),
-        "remainingCash": round(debited['cash'], 2)
+        "remainingCash": round(debited["cash"], 2),
     }
 
 
@@ -317,25 +318,19 @@ async def sell_property(request: SellRequest, current_user: dict = Depends(get_c
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
-    portfolio_id = portfolio['_id']
+    portfolio_id = portfolio["_id"]
 
     # Refuse an ongoing renovation before claiming anything, so a refusal
     # leaves the holding untouched.
-    holding = await db.holdings.find_one({
-        "portfolioId": portfolio_id,
-        "propertyId": property_id
-    })
+    holding = await db.holdings.find_one({"portfolioId": portfolio_id, "propertyId": property_id})
     if not holding:
         raise HTTPException(status_code=404, detail="Property not in portfolio")
 
-    if any(work['status'] == 'ongoing' for work in holding.get('works', [])):
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot sell property with ongoing renovations"
-        )
+    if any(work["status"] == "ongoing" for work in holding.get("works", [])):
+        raise HTTPException(status_code=400, detail="Cannot sell property with ongoing renovations")
 
     # Claim the holding. Whoever removes it is the one who gets paid for it.
-    claimed = await db.holdings.find_one_and_delete({"_id": holding['_id']})
+    claimed = await db.holdings.find_one_and_delete({"_id": holding["_id"]})
     if not claimed:
         raise HTTPException(status_code=404, detail="Property not in portfolio")
 
@@ -346,27 +341,28 @@ async def sell_property(request: SellRequest, current_user: dict = Depends(get_c
     net_proceeds = current_price - fees
     trade_date = _first_day_of_quarter(current_t)
 
-    await db.portfolios.update_one(
-        {"_id": portfolio_id},
-        {"$inc": {"cash": net_proceeds}}
-    )
+    await db.portfolios.update_one({"_id": portfolio_id}, {"$inc": {"cash": net_proceeds}})
 
-    await db.trades.insert_one({
-        "portfolioId": portfolio_id,
-        "propertyId": property_id,
-        "side": "sell",
-        "price": current_price,
-        "fees": fees,
-        "ts": trade_date,
-        "quarter": current_t
-    })
+    await db.trades.insert_one(
+        {
+            "portfolioId": portfolio_id,
+            "propertyId": property_id,
+            "side": "sell",
+            "price": current_price,
+            "fees": fees,
+            "ts": trade_date,
+            "quarter": current_t,
+        }
+    )
 
     await _release_listing(db, property_id)
 
-    buy_price = claimed['buyPrice']
+    buy_price = claimed["buyPrice"]
     pnl = net_proceeds - buy_price
 
-    logger.info(f"User {current_user['username']} sold property {property_id} for {current_price}, P&L: {pnl}")
+    logger.info(
+        f"User {current_user['username']} sold property {property_id} for {current_price}, P&L: {pnl}"
+    )
 
     return {
         "success": True,
@@ -375,5 +371,5 @@ async def sell_property(request: SellRequest, current_user: dict = Depends(get_c
         "fees": round(fees, 2),
         "netProceeds": round(net_proceeds, 2),
         "buyPrice": round(buy_price, 2),
-        "pnl": round(pnl, 2)
+        "pnl": round(pnl, 2),
     }

@@ -1,6 +1,7 @@
 """
 Tests for the trading router: listings filters/pagination, buy, and sell.
 """
+
 from datetime import datetime
 
 import pytest
@@ -10,30 +11,36 @@ from api.database import get_database
 from api.tests.conftest import api_client
 
 
-async def _make_property_with_listing(db, *, zone, type_, surface, base_ppm,
-                                       price, available=True, t="2020-1"):
+async def _make_property_with_listing(
+    db, *, zone, type_, surface, base_ppm, price, available=True, t="2020-1"
+):
     """Helper: create a property and an associated listing, return its id."""
-    result = await db.properties.insert_one({
-        "zone": zone,
-        "type": type_,
-        "surface": surface,
-        "epc": 0.5,
-        "state": 0.6,
-        "kitchen": 0.6,
-        "bath": 0.6,
-        "base_ppm": base_ppm,
-        "createdAt": datetime.utcnow(),
-    })
-    await db.listings.insert_one({
-        "propertyId": result.inserted_id,
-        "isAvailable": available,
-        "lastComputedPrice": float(price),
-        "lastT": t,
-    })
+    result = await db.properties.insert_one(
+        {
+            "zone": zone,
+            "type": type_,
+            "surface": surface,
+            "epc": 0.5,
+            "state": 0.6,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": base_ppm,
+            "createdAt": datetime.utcnow(),
+        }
+    )
+    await db.listings.insert_one(
+        {
+            "propertyId": result.inserted_id,
+            "isAvailable": available,
+            "lastComputedPrice": float(price),
+            "lastT": t,
+        }
+    )
     return result.inserted_id
 
 
 # ==================== LISTINGS ====================
+
 
 @pytest.mark.asyncio
 async def test_listings_empty():
@@ -51,10 +58,12 @@ async def test_listings_empty():
 async def test_listings_filter_by_type():
     """Listings can be filtered by property type."""
     db = get_database()
-    await _make_property_with_listing(db, zone="Ixelles", type_="apartment",
-                                      surface=80, base_ppm=4500, price=360000)
-    await _make_property_with_listing(db, zone="Ixelles", type_="house",
-                                      surface=150, base_ppm=4800, price=720000)
+    await _make_property_with_listing(
+        db, zone="Ixelles", type_="apartment", surface=80, base_ppm=4500, price=360000
+    )
+    await _make_property_with_listing(
+        db, zone="Ixelles", type_="house", surface=150, base_ppm=4800, price=720000
+    )
 
     async with api_client() as client:
         response = await client.get("/trading/listings?type=house")
@@ -68,12 +77,15 @@ async def test_listings_filter_by_type():
 async def test_listings_filter_by_price_range():
     """minPrice / maxPrice filter on the computed price."""
     db = get_database()
-    await _make_property_with_listing(db, zone="Uccle", type_="apartment",
-                                      surface=50, base_ppm=2000, price=100000)
-    await _make_property_with_listing(db, zone="Uccle", type_="apartment",
-                                      surface=80, base_ppm=4000, price=320000)
-    await _make_property_with_listing(db, zone="Uccle", type_="apartment",
-                                      surface=120, base_ppm=5000, price=600000)
+    await _make_property_with_listing(
+        db, zone="Uccle", type_="apartment", surface=50, base_ppm=2000, price=100000
+    )
+    await _make_property_with_listing(
+        db, zone="Uccle", type_="apartment", surface=80, base_ppm=4000, price=320000
+    )
+    await _make_property_with_listing(
+        db, zone="Uccle", type_="apartment", surface=120, base_ppm=5000, price=600000
+    )
 
     async with api_client() as client:
         response = await client.get("/trading/listings?minPrice=150000&maxPrice=400000")
@@ -89,13 +101,12 @@ async def test_listings_pagination_and_sort():
     db = get_database()
     prices = [100000, 200000, 300000, 400000, 500000]
     for i, price in enumerate(prices):
-        await _make_property_with_listing(db, zone="Schaerbeek", type_="apartment",
-                                          surface=60 + i, base_ppm=3000, price=price)
+        await _make_property_with_listing(
+            db, zone="Schaerbeek", type_="apartment", surface=60 + i, base_ppm=3000, price=price
+        )
 
     async with api_client() as client:
-        response = await client.get(
-            "/trading/listings?page=1&limit=2&sortBy=price&sortOrder=desc"
-        )
+        response = await client.get("/trading/listings?page=1&limit=2&sortBy=price&sortOrder=desc")
         assert response.status_code == 200
         data = response.json()
         assert data["total"] == 5
@@ -112,8 +123,9 @@ async def test_listings_pagination_and_sort():
 async def test_listings_enrichment_fields():
     """Listings are enriched with derived analytics fields."""
     db = get_database()
-    await _make_property_with_listing(db, zone="Bruxelles-Centre", type_="apartment",
-                                      surface=100, base_ppm=4200, price=420000)
+    await _make_property_with_listing(
+        db, zone="Bruxelles-Centre", type_="apartment", surface=100, base_ppm=4200, price=420000
+    )
 
     async with api_client() as client:
         response = await client.get("/trading/listings")
@@ -121,8 +133,13 @@ async def test_listings_enrichment_fields():
         # Price per m2 computed in Python
         assert item["pricePerM2"] == pytest.approx(4200.0)
         # Quality and trend fields present
-        for field in ("qualityScore", "epcScore", "zoneTrend",
-                      "estimated1YearPrice", "estimated1YearGain"):
+        for field in (
+            "qualityScore",
+            "epcScore",
+            "zoneTrend",
+            "estimated1YearPrice",
+            "estimated1YearGain",
+        ):
             assert field in item
 
 
@@ -130,9 +147,15 @@ async def test_listings_enrichment_fields():
 async def test_listings_unavailable_excluded():
     """Listings flagged unavailable are not returned."""
     db = get_database()
-    await _make_property_with_listing(db, zone="Namur-Centre", type_="house",
-                                      surface=100, base_ppm=2900, price=290000,
-                                      available=False)
+    await _make_property_with_listing(
+        db,
+        zone="Namur-Centre",
+        type_="house",
+        surface=100,
+        base_ppm=2900,
+        price=290000,
+        available=False,
+    )
 
     async with api_client() as client:
         response = await client.get("/trading/listings?zone=Namur-Centre")
@@ -140,6 +163,7 @@ async def test_listings_unavailable_excluded():
 
 
 # ==================== BUY ====================
+
 
 @pytest.mark.asyncio
 async def test_buy_requires_auth():
@@ -214,6 +238,7 @@ async def test_buy_marks_listing_unavailable(test_user_and_token):
 
 # ==================== SELL ====================
 
+
 @pytest.mark.asyncio
 async def test_sell_property_not_in_portfolio(test_user_and_token):
     """Selling a property not held returns 404."""
@@ -236,17 +261,18 @@ async def test_sell_blocked_by_ongoing_renovation(test_user_and_token):
         db, zone="Gand-Centre", type_="house", surface=120, base_ppm=3500, price=420000
     )
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "buyPrice": 420000,
-        "buyDate": datetime.utcnow(),
-        "works": [{"renoId": ObjectId(), "startT": "2020-1",
-                   "endT": "2020-3", "status": "ongoing"}],
-    })
-    await db.pricehistory.insert_one(
-        {"propertyId": prop_id, "t": "2020-1", "price": 450000}
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": 420000,
+            "buyDate": datetime.utcnow(),
+            "works": [
+                {"renoId": ObjectId(), "startT": "2020-1", "endT": "2020-3", "status": "ongoing"}
+            ],
+        }
     )
+    await db.pricehistory.insert_one({"propertyId": prop_id, "t": "2020-1", "price": 450000})
 
     async with api_client() as client:
         response = await client.post(
@@ -265,21 +291,26 @@ async def test_sell_computes_pnl_and_credits_cash(test_user_and_token):
     buy_price = 400000
     current_price = 460000
     prop_id = await _make_property_with_listing(
-        db, zone="Ixelles", type_="house", surface=150, base_ppm=4800,
-        price=current_price, available=False
+        db,
+        zone="Ixelles",
+        type_="house",
+        surface=150,
+        base_ppm=4800,
+        price=current_price,
+        available=False,
     )
     portfolio = await db.portfolios.find_one({"userId": user_data["user_id"]})
     initial_cash = portfolio["cash"]
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "buyPrice": buy_price,
-        "buyDate": datetime.utcnow(),
-        "works": [],
-    })
-    await db.pricehistory.insert_one(
-        {"propertyId": prop_id, "t": "2020-1", "price": current_price}
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": buy_price,
+            "buyDate": datetime.utcnow(),
+            "works": [],
+        }
     )
+    await db.pricehistory.insert_one({"propertyId": prop_id, "t": "2020-1", "price": current_price})
 
     async with api_client() as client:
         response = await client.post(

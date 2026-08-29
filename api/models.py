@@ -2,6 +2,7 @@
 Pydantic models for Real Estate Simulation
 Validation for all MongoDB entities
 """
+
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -12,6 +13,7 @@ from pydantic.functional_validators import AfterValidator
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""
+
     @classmethod
     def __get_validators__(cls):
         yield cls.validate
@@ -68,6 +70,7 @@ class User(BaseModel):
     not match the collection is worse than no model at all. ``hashedPassword``
     in particular is the field ``authenticate_user`` reads.
     """
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
@@ -81,16 +84,17 @@ class User(BaseModel):
 
 class UserRegister(BaseModel):
     """User registration request"""
+
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     name: str
     password: str = Field(
         min_length=8,
         description="At least 8 characters, with an uppercase letter, a "
-                    "lowercase letter and a digit",
+        "lowercase letter and a digit",
     )
 
-    @field_validator('password')
+    @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:
         """The password rule, stated here and nowhere else.
@@ -103,22 +107,24 @@ class UserRegister(BaseModel):
         class, so an accented capital counts as a capital.
         """
         if not any(c.isupper() for c in v):
-            raise ValueError('Password must contain at least one uppercase letter')
+            raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.islower() for c in v):
-            raise ValueError('Password must contain at least one lowercase letter')
+            raise ValueError("Password must contain at least one lowercase letter")
         if not any(c.isdigit() for c in v):
-            raise ValueError('Password must contain at least one digit')
+            raise ValueError("Password must contain at least one digit")
         return v
 
 
 class UserLogin(BaseModel):
     """User login request"""
+
     username: str
     password: str
 
 
 class Token(BaseModel):
     """JWT token response"""
+
     access_token: str
     token_type: str = "bearer"
     user: dict
@@ -126,6 +132,7 @@ class Token(BaseModel):
 
 class Property(BaseModel):
     """Property entity (intrinsic characteristics)"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     zone: str
     type: Literal["house", "apartment"]
@@ -142,6 +149,7 @@ class Property(BaseModel):
 
 class LocalIndex(BaseModel):
     """Local zone indicators for a given quarter"""
+
     zone: str
     access: float  # Accessibility score
     attract: float  # Attractiveness score
@@ -151,6 +159,7 @@ class LocalIndex(BaseModel):
 
 class MarketIndex(BaseModel):
     """Market indices for a given quarter"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     t: str  # Quarter "YYYY-Q"
     inflation: float
@@ -166,6 +175,7 @@ class MarketIndex(BaseModel):
 
 class Listing(BaseModel):
     """Market listing"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     propertyId: PyObjectId
     isAvailable: bool = True
@@ -177,6 +187,7 @@ class Listing(BaseModel):
 
 class Portfolio(BaseModel):
     """User portfolio"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     userId: PyObjectId
     cash: float = Field(ge=0)
@@ -187,6 +198,7 @@ class Portfolio(BaseModel):
 
 class WorkItem(BaseModel):
     """Renovation work item within a holding"""
+
     renoId: PyObjectId
     startT: str  # Start quarter "YYYY-Q"
     endT: str  # End quarter "YYYY-Q"
@@ -195,6 +207,7 @@ class WorkItem(BaseModel):
 
 class Holding(BaseModel):
     """Property held in portfolio"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     portfolioId: PyObjectId
     propertyId: PyObjectId
@@ -207,6 +220,7 @@ class Holding(BaseModel):
 
 class RenovationDelta(BaseModel):
     """Deltas applied by a renovation"""
+
     epc: float = 0.0
     state: float = 0.0
     kitchen: float = 0.0
@@ -216,6 +230,7 @@ class RenovationDelta(BaseModel):
 
 class Renovation(BaseModel):
     """Renovation type catalog"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     code: str
     label: str
@@ -228,6 +243,7 @@ class Renovation(BaseModel):
 
 class Trade(BaseModel):
     """Trade (buy or sell)"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     portfolioId: PyObjectId
     propertyId: PyObjectId
@@ -241,6 +257,7 @@ class Trade(BaseModel):
 
 class PriceHistory(BaseModel):
     """Historical price for a property at a given quarter"""
+
     id: PyObjectId | None = Field(default=None, alias="_id")
     propertyId: PyObjectId
     t: str  # Quarter "YYYY-Q"
@@ -252,22 +269,26 @@ class PriceHistory(BaseModel):
 # Request/Response models
 class BuyRequest(BaseModel):
     """Request to buy a property"""
+
     propertyId: ObjectIdStr
 
 
 class SellRequest(BaseModel):
     """Request to sell a property"""
+
     propertyId: ObjectIdStr
 
 
 class RenovateRequest(BaseModel):
     """Request to start a renovation"""
+
     holdingId: ObjectIdStr
     renoCode: str
 
 
 class PortfolioSummary(BaseModel):
     """Portfolio summary response"""
+
     cash: float
     equity: float
     totalValue: float
@@ -277,6 +298,7 @@ class PortfolioSummary(BaseModel):
 
 class HoldingDetail(BaseModel):
     """Detailed holding information"""
+
     holdingId: str
     propertyId: str
     zone: str

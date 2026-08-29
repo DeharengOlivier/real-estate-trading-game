@@ -9,6 +9,16 @@ requires-python = ">=3.11"
 target-version = "py311"
 line-length = 100
 exclude = [".venv", "ui"]
+# Markdown is documentation, not source. The formatter collapses the schema
+# listings in the READMEs onto one line, which is exactly the opposite of what
+# they are for.
+extend-exclude = ["*.md"]
+
+[tool.ruff.format]
+# The default, stated so that "what the formatter does" is a property of the
+# repository rather than of whoever ran it.
+quote-style = "double"
+indent-style = "space"
 
 [tool.ruff.lint]
 select = [

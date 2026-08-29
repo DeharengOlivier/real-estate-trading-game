@@ -3,6 +3,7 @@ FastAPI main application for Real Estate Simulation
 Refactored following SOLID principles - Single Responsibility
 Main file only handles application setup and router registration
 """
+
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -24,8 +25,7 @@ from api.routers import admin, auth, charts, game, health, portfolio, trading
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ app = FastAPI(
     title="Real Estate Simulation API",
     description="Backend API for real estate trading game with market simulation",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -76,6 +76,7 @@ app.add_middleware(
 
 
 # ==================== MIDDLEWARE ====================
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -110,11 +111,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc!s}", exc_info=True)
 
     return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "Internal server error",
-            "type": "server_error"
-        }
+        status_code=500, content={"detail": "Internal server error", "type": "server_error"}
     )
 
 
@@ -147,10 +144,5 @@ app.include_router(charts.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "api.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True, log_level="info")

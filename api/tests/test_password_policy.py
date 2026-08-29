@@ -9,6 +9,7 @@ anybody noticing, because no request ever reached it.
 These tests assert the rule through the endpoint, so they hold whichever layer
 ends up enforcing it, and they name the reason each password is refused.
 """
+
 import pytest
 
 from api.database import get_database
@@ -25,12 +26,15 @@ REFUSED = [
 
 
 async def _register(client, password, username="candidate"):
-    return await client.post("/auth/register", json={
-        "username": username,
-        "email": f"{username}@example.com",
-        "name": "Candidate",
-        "password": password,
-    })
+    return await client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "email": f"{username}@example.com",
+            "name": "Candidate",
+            "password": password,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -54,12 +58,15 @@ async def test_a_refused_registration_creates_nothing(password, why):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("password", [
-    "Abcdefg1",           # exactly eight, one of each class
-    "CorrectHorse1",
-    "Pass1word-with-punctuation",
-    "Éléphant1Majuscule",  # non-ASCII letters still carry case
-])
+@pytest.mark.parametrize(
+    "password",
+    [
+        "Abcdefg1",  # exactly eight, one of each class
+        "CorrectHorse1",
+        "Pass1word-with-punctuation",
+        "Éléphant1Majuscule",  # non-ASCII letters still carry case
+    ],
+)
 async def test_a_compliant_password_is_accepted(password):
     """The rule must refuse the weak without refusing the merely unusual."""
     async with api_client() as client:

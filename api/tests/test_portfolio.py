@@ -1,6 +1,7 @@
 """
 Tests for the portfolio router: summary, P&L computation, and holdings detail.
 """
+
 from datetime import datetime
 
 import pytest
@@ -9,19 +10,20 @@ from api.database import get_database
 from api.tests.conftest import api_client
 
 
-async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,
-                        base_ppm=4000):
-    result = await db.properties.insert_one({
-        "zone": zone,
-        "type": type_,
-        "surface": surface,
-        "epc": 0.5,
-        "state": 0.6,
-        "kitchen": 0.6,
-        "bath": 0.6,
-        "base_ppm": base_ppm,
-        "createdAt": datetime.utcnow(),
-    })
+async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80, base_ppm=4000):
+    result = await db.properties.insert_one(
+        {
+            "zone": zone,
+            "type": type_,
+            "surface": surface,
+            "epc": 0.5,
+            "state": 0.6,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": base_ppm,
+            "createdAt": datetime.utcnow(),
+        }
+    )
     return result.inserted_id
 
 
@@ -66,25 +68,27 @@ async def test_summary_unrealized_gain(test_user_and_token):
     await db.portfolios.update_one(
         {"_id": portfolio["_id"]}, {"$set": {"cash": 1000000.0 - buy_price - fees}}
     )
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "buyPrice": buy_price,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [],
-    })
-    await db.trades.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "side": "buy",
-        "price": buy_price,
-        "fees": fees,
-        "ts": datetime(2020, 1, 1),
-        "quarter": "2020-1",
-    })
-    await db.pricehistory.insert_one(
-        {"propertyId": prop_id, "t": "2020-1", "price": current_price}
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": buy_price,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [],
+        }
     )
+    await db.trades.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "side": "buy",
+            "price": buy_price,
+            "fees": fees,
+            "ts": datetime(2020, 1, 1),
+            "quarter": "2020-1",
+        }
+    )
+    await db.pricehistory.insert_one({"propertyId": prop_id, "t": "2020-1", "price": current_price})
 
     async with api_client() as client:
         response = await client.get("/portfolio/summary", headers=headers)
@@ -121,26 +125,29 @@ async def test_holdings_detail_includes_costs_and_pnl(test_user_and_token):
     reno = await db.renovations.find_one({"code": "KITCHEN"})
     current_price = 500000
 
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "buyPrice": buy_price,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [{"renoId": reno["_id"], "startT": "2020-1",
-                   "endT": "2020-3", "status": "completed"}],
-    })
-    await db.trades.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop_id,
-        "side": "buy",
-        "price": buy_price,
-        "fees": buy_fees,
-        "ts": datetime(2020, 1, 1),
-        "quarter": "2020-1",
-    })
-    await db.pricehistory.insert_one(
-        {"propertyId": prop_id, "t": "2020-1", "price": current_price}
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "buyPrice": buy_price,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [
+                {"renoId": reno["_id"], "startT": "2020-1", "endT": "2020-3", "status": "completed"}
+            ],
+        }
     )
+    await db.trades.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop_id,
+            "side": "buy",
+            "price": buy_price,
+            "fees": buy_fees,
+            "ts": datetime(2020, 1, 1),
+            "quarter": "2020-1",
+        }
+    )
+    await db.pricehistory.insert_one({"propertyId": prop_id, "t": "2020-1", "price": current_price})
 
     async with api_client() as client:
         response = await client.get("/portfolio/holdings", headers=headers)

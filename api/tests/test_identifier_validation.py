@@ -8,6 +8,7 @@ caller learns that their input travelled further into the system than it should
 have. Ids are parsed at the boundary instead, so past the boundary an id is an
 id.
 """
+
 import pytest
 from bson import ObjectId
 from jose import jwt
@@ -26,9 +27,7 @@ MALFORMED_IDS = [
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("malformed", MALFORMED_IDS)
-async def test_buying_a_malformed_property_id_is_a_client_error(
-    test_user_and_token, malformed
-):
+async def test_buying_a_malformed_property_id_is_a_client_error(test_user_and_token, malformed):
     _, _, headers = test_user_and_token
 
     async with api_client() as client:
@@ -42,9 +41,7 @@ async def test_buying_a_malformed_property_id_is_a_client_error(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("malformed", MALFORMED_IDS)
-async def test_selling_a_malformed_property_id_is_a_client_error(
-    test_user_and_token, malformed
-):
+async def test_selling_a_malformed_property_id_is_a_client_error(test_user_and_token, malformed):
     _, _, headers = test_user_and_token
 
     async with api_client() as client:
@@ -58,9 +55,7 @@ async def test_selling_a_malformed_property_id_is_a_client_error(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("malformed", MALFORMED_IDS)
-async def test_renovating_a_malformed_holding_id_is_a_client_error(
-    test_user_and_token, malformed
-):
+async def test_renovating_a_malformed_holding_id_is_a_client_error(test_user_and_token, malformed):
     _, _, headers = test_user_and_token
 
     async with api_client() as client:
@@ -83,9 +78,7 @@ async def test_a_malformed_token_subject_answers_401_not_500(malformed):
     token = jwt.encode({"sub": malformed}, SECRET_KEY, algorithm=ALGORITHM)
 
     async with api_client() as client:
-        response = await client.get(
-            "/auth/me", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
 
@@ -100,9 +93,7 @@ async def test_a_malformed_property_id_in_a_chart_path_is_a_client_error(
         pytest.skip("not addressable as a single path segment")
 
     async with api_client() as client:
-        response = await client.get(
-            f"/charts/property/{malformed}", headers=headers
-        )
+        response = await client.get(f"/charts/property/{malformed}", headers=headers)
 
     assert response.status_code == 400, response.text
 

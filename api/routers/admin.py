@@ -11,6 +11,7 @@ players by default, rather than by remembering to add a decorator.
 Handlers still take ``current_user`` where they need to know who acted; that
 dependency answers identity, while the router-level one answers entitlement.
 """
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,11 +32,9 @@ router = APIRouter(
 
 # ==================== PROPERTIES ====================
 
+
 @router.post("/properties", status_code=status.HTTP_201_CREATED)
-async def create_property(
-    property_data: Property,
-    current_user: dict = Depends(get_current_user)
-):
+async def create_property(property_data: Property, current_user: dict = Depends(get_current_user)):
     """
     Create a new property
 
@@ -53,12 +52,14 @@ async def create_property(
 
     if market_index:
         price = compute_property_price(prop_dict, market_index)
-        await db.listings.insert_one({
-            "propertyId": result.inserted_id,
-            "isAvailable": True,
-            "lastComputedPrice": price,
-            "lastT": current_t
-        })
+        await db.listings.insert_one(
+            {
+                "propertyId": result.inserted_id,
+                "isAvailable": True,
+                "lastComputedPrice": price,
+                "lastT": current_t,
+            }
+        )
 
     logger.info(f"Admin created property: {result.inserted_id}")
     return {"id": str(result.inserted_id), "message": "Property created successfully"}
@@ -66,9 +67,7 @@ async def create_property(
 
 @router.get("/properties")
 async def list_all_properties(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: dict = Depends(get_current_user)
+    skip: int = 0, limit: int = 100, current_user: dict = Depends(get_current_user)
 ):
     """List all properties with pagination (available to all authenticated users)"""
     db = get_database()
@@ -84,17 +83,14 @@ async def list_all_properties(
             "state": prop["state"],
             "kitchen": prop["kitchen"],
             "bath": prop["bath"],
-            "base_ppm": prop["base_ppm"]
+            "base_ppm": prop["base_ppm"],
         }
         for prop in properties
     ]
 
 
 @router.get("/properties/{property_id}")
-async def get_property_by_id(
-    property_id: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def get_property_by_id(property_id: str, current_user: dict = Depends(get_current_user)):
     """Get detailed property information by ID (available to all authenticated users)"""
     db = get_database()
 
@@ -113,15 +109,13 @@ async def get_property_by_id(
         "state": prop["state"],
         "kitchen": prop["kitchen"],
         "bath": prop["bath"],
-        "base_ppm": prop["base_ppm"]
+        "base_ppm": prop["base_ppm"],
     }
 
 
 @router.put("/properties/{property_id}")
 async def update_property(
-    property_id: str,
-    property_data: Property,
-    current_user: dict = Depends(get_current_user)
+    property_id: str, property_data: Property, current_user: dict = Depends(get_current_user)
 ):
     """Update property characteristics (available to all authenticated users)"""
     db = get_database()
@@ -130,10 +124,7 @@ async def update_property(
 
     prop_dict = property_data.model_dump(exclude={"id"})
 
-    result = await db.properties.update_one(
-        {"_id": prop_id},
-        {"$set": prop_dict}
-    )
+    result = await db.properties.update_one({"_id": prop_id}, {"$set": prop_dict})
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Property not found")
@@ -143,10 +134,7 @@ async def update_property(
 
 
 @router.delete("/properties/{property_id}")
-async def delete_property(
-    property_id: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def delete_property(property_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a property (only if not owned) - available to all authenticated users"""
     db = get_database()
 
@@ -170,10 +158,10 @@ async def delete_property(
 
 # ==================== RENOVATIONS ====================
 
+
 @router.post("/renovations", status_code=status.HTTP_201_CREATED)
 async def create_renovation(
-    renovation_data: Renovation,
-    current_user: dict = Depends(get_current_user)
+    renovation_data: Renovation, current_user: dict = Depends(get_current_user)
 ):
     """Create a new renovation type (available to all authenticated users)"""
     db = get_database()
@@ -205,19 +193,14 @@ async def get_all_renovations(current_user: dict = Depends(get_current_user)):
 
 @router.put("/renovations/{code}")
 async def update_renovation(
-    code: str,
-    renovation_data: Renovation,
-    current_user: dict = Depends(get_current_user)
+    code: str, renovation_data: Renovation, current_user: dict = Depends(get_current_user)
 ):
     """Update renovation type (available to all authenticated users)"""
     db = get_database()
 
     reno_dict = renovation_data.model_dump(exclude={"id"})
 
-    result = await db.renovations.update_one(
-        {"code": code},
-        {"$set": reno_dict}
-    )
+    result = await db.renovations.update_one({"code": code}, {"$set": reno_dict})
 
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Renovation not found")
@@ -227,10 +210,7 @@ async def update_renovation(
 
 
 @router.delete("/renovations/{code}")
-async def delete_renovation(
-    code: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def delete_renovation(code: str, current_user: dict = Depends(get_current_user)):
     """Delete a renovation type (available to all authenticated users)"""
     db = get_database()
 
@@ -244,11 +224,10 @@ async def delete_renovation(
 
 # ==================== TRADES ====================
 
+
 @router.get("/trades")
 async def list_all_trades(
-    skip: int = 0,
-    limit: int = 100,
-    current_user: dict = Depends(get_current_user)
+    skip: int = 0, limit: int = 100, current_user: dict = Depends(get_current_user)
 ):
     """List all trades across all portfolios (available to all authenticated users)"""
     db = get_database()
@@ -262,7 +241,7 @@ async def list_all_trades(
             "side": trade["side"],
             "price": trade["price"],
             "fees": trade["fees"],
-            "ts": trade["ts"].isoformat()
+            "ts": trade["ts"].isoformat(),
         }
         for trade in trades
     ]

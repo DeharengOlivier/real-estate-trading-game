@@ -8,6 +8,7 @@ grows with the catalog.
 The correctness of the advance is covered in test_game.py. What is fixed here
 is its cost, stated as a bound rather than discovered in production.
 """
+
 from datetime import datetime
 
 import pytest
@@ -28,15 +29,26 @@ def counted_queries(monkeypatch):
 
 async def _fill_market(db, count=PROPERTIES):
     for index in range(count):
-        prop = await db.properties.insert_one({
-            "zone": "Bruxelles-Centre", "type": "house", "surface": 100 + index,
-            "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6,
-            "base_ppm": 3000,
-        })
-        await db.listings.insert_one({
-            "propertyId": prop.inserted_id, "isAvailable": True,
-            "lastComputedPrice": 300_000.0, "lastT": "2020-1",
-        })
+        prop = await db.properties.insert_one(
+            {
+                "zone": "Bruxelles-Centre",
+                "type": "house",
+                "surface": 100 + index,
+                "epc": 0.6,
+                "state": 0.7,
+                "kitchen": 0.6,
+                "bath": 0.6,
+                "base_ppm": 3000,
+            }
+        )
+        await db.listings.insert_one(
+            {
+                "propertyId": prop.inserted_id,
+                "isAvailable": True,
+                "lastComputedPrice": 300_000.0,
+                "lastT": "2020-1",
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -58,9 +70,7 @@ async def test_advancing_a_quarter_is_flat_in_the_number_of_properties(
 
 
 @pytest.mark.asyncio
-async def test_no_single_document_write_per_listing(
-    test_user_and_token, counted_queries
-):
+async def test_no_single_document_write_per_listing(test_user_and_token, counted_queries):
     _, _, headers = test_user_and_token
     db = get_database()
     await _fill_market(db)
@@ -69,15 +79,12 @@ async def test_no_single_document_write_per_listing(
         await client.post("/game/advance-quarter", headers=headers)
 
     assert counted_queries.count("listings.update_one") <= 1, (
-        "one write per property is the shape that made this grow with the "
-        "catalog"
+        "one write per property is the shape that made this grow with the catalog"
     )
 
 
 @pytest.mark.asyncio
-async def test_the_bound_holds_when_the_catalog_doubles(
-    test_user_and_token, counted_queries
-):
+async def test_the_bound_holds_when_the_catalog_doubles(test_user_and_token, counted_queries):
     _, _, headers = test_user_and_token
     db = get_database()
     await _fill_market(db, count=PROPERTIES * 2)
@@ -116,25 +123,43 @@ async def test_a_completed_renovation_is_still_applied(test_user_and_token):
     db = get_database()
 
     renovation = await db.renovations.find_one({})
-    prop = await db.properties.insert_one({
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
-        "epc": 0.3, "state": 0.3, "kitchen": 0.3, "bath": 0.3, "base_ppm": 3000,
-    })
-    await db.listings.insert_one({
-        "propertyId": prop.inserted_id, "isAvailable": False,
-        "lastComputedPrice": 300_000.0, "lastT": "2020-1",
-    })
+    prop = await db.properties.insert_one(
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 100,
+            "epc": 0.3,
+            "state": 0.3,
+            "kitchen": 0.3,
+            "bath": 0.3,
+            "base_ppm": 3000,
+        }
+    )
+    await db.listings.insert_one(
+        {
+            "propertyId": prop.inserted_id,
+            "isAvailable": False,
+            "lastComputedPrice": 300_000.0,
+            "lastT": "2020-1",
+        }
+    )
     portfolio = await db.portfolios.find_one({"userId": user["user_id"]})
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop.inserted_id,
-        "buyPrice": 250_000.0,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [{
-            "renoId": renovation["_id"],
-            "startT": "2020-1", "endT": "2020-2", "status": "ongoing",
-        }],
-    })
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop.inserted_id,
+            "buyPrice": 250_000.0,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [
+                {
+                    "renoId": renovation["_id"],
+                    "startT": "2020-1",
+                    "endT": "2020-2",
+                    "status": "ongoing",
+                }
+            ],
+        }
+    )
     before = await db.properties.find_one({"_id": prop.inserted_id})
 
     async with api_client() as client:
@@ -143,7 +168,10 @@ async def test_a_completed_renovation_is_still_applied(test_user_and_token):
     assert response.json()["renovationsCompleted"] == 1
     after = await db.properties.find_one({"_id": prop.inserted_id})
     assert (after["epc"], after["state"], after["kitchen"], after["bath"]) != (
-        before["epc"], before["state"], before["kitchen"], before["bath"]
+        before["epc"],
+        before["state"],
+        before["kitchen"],
+        before["bath"],
     )
 
     holding = await db.holdings.find_one({"propertyId": prop.inserted_id})

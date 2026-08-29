@@ -9,6 +9,7 @@ against.
 Either way the rule is the same: parse once, at the boundary, and let every
 handler past it construct an ObjectId without a guard.
 """
+
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, status

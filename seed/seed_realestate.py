@@ -2,6 +2,7 @@
 Seed script for Real Estate Simulation
 Generates initial data for MongoDB with reproducible random values
 """
+
 import asyncio
 import math
 import os
@@ -22,7 +23,7 @@ def get_quarter_string(year: int, quarter: int) -> str:
 
 def parse_quarter_string(t: str) -> tuple[int, int]:
     """Parse quarter string to (year, quarter)"""
-    year, q = t.split('-')
+    year, q = t.split("-")
     return int(year), int(q)
 
 
@@ -45,12 +46,12 @@ def compute_macro_index(market_index: dict) -> float:
     )
     """
     exponent = (
-        A_INF * market_index['inflation']
-        - A_RATE * market_index['rate']
-        + A_INC * market_index['income']
-        - A_UNEMP * market_index['unemployment']
-        + A_CONF * market_index['confidence']
-        + A_POL * market_index['policy']
+        A_INF * market_index["inflation"]
+        - A_RATE * market_index["rate"]
+        + A_INC * market_index["income"]
+        - A_UNEMP * market_index["unemployment"]
+        + A_CONF * market_index["confidence"]
+        + A_POL * market_index["policy"]
     )
     return math.exp(exponent)
 
@@ -64,18 +65,16 @@ def compute_local_index(local_data: dict) -> float:
     )
     """
     exponent = (
-        B_ACC * local_data['access']
-        + B_ATTR * local_data['attract']
-        - B_NUI * local_data['nuisance']
-        + B_TENS * local_data['tension']
+        B_ACC * local_data["access"]
+        + B_ATTR * local_data["attract"]
+        - B_NUI * local_data["nuisance"]
+        + B_TENS * local_data["tension"]
     )
     return math.exp(exponent)
 
 
 def compute_property_price(
-    property_data: dict,
-    market_index: dict,
-    add_noise: bool = True
+    property_data: dict, market_index: dict, add_noise: bool = True
 ) -> float:
     """
     Compute property price at quarter t
@@ -86,14 +85,14 @@ def compute_property_price(
                  * MacroIndex(t) * LocalIndex(zone, t) * Noise(t)
     """
     # Base price
-    base_price = property_data['base_ppm'] * property_data['surface']
+    base_price = property_data["base_ppm"] * property_data["surface"]
 
     # Property characteristics multipliers
     char_multiplier = (
-        (1 + W_EPC * property_data['epc']) *
-        (1 + W_STATE * property_data['state']) *
-        (1 + W_KITCHEN * property_data['kitchen']) *
-        (1 + W_BATH * property_data['bath'])
+        (1 + W_EPC * property_data["epc"])
+        * (1 + W_STATE * property_data["state"])
+        * (1 + W_KITCHEN * property_data["kitchen"])
+        * (1 + W_BATH * property_data["bath"])
     )
 
     # Macro index
@@ -101,8 +100,8 @@ def compute_property_price(
 
     # Local index
     local_data = None
-    for loc in market_index['locals']:
-        if loc['zone'] == property_data['zone']:
+    for loc in market_index["locals"]:
+        if loc["zone"] == property_data["zone"]:
             local_data = loc
             break
 
@@ -133,10 +132,7 @@ def generate_properties(num: int) -> list[dict]:
         prop_type = random.choice(["house", "apartment"])
 
         # Surface: apartments 50-200m², houses 80-350m²
-        surface = (
-            random.uniform(50, 200) if prop_type == "apartment"
-            else random.uniform(80, 350)
-        )
+        surface = random.uniform(50, 200) if prop_type == "apartment" else random.uniform(80, 350)
 
         # Random characteristics [0,1]
         epc = random.uniform(0.2, 0.9)
@@ -146,17 +142,19 @@ def generate_properties(num: int) -> list[dict]:
 
         base_ppm = BASE_PPM[zone][prop_type]
 
-        properties.append({
-            "zone": zone,
-            "type": prop_type,
-            "surface": round(surface, 2),
-            "epc": round(epc, 3),
-            "state": round(state, 3),
-            "kitchen": round(kitchen, 3),
-            "bath": round(bath, 3),
-            "base_ppm": base_ppm,
-            "createdAt": datetime.utcnow()
-        })
+        properties.append(
+            {
+                "zone": zone,
+                "type": prop_type,
+                "surface": round(surface, 2),
+                "epc": round(epc, 3),
+                "state": round(state, 3),
+                "kitchen": round(kitchen, 3),
+                "bath": round(bath, 3),
+                "base_ppm": base_ppm,
+                "createdAt": datetime.utcnow(),
+            }
+        )
 
     return properties
 
@@ -174,12 +172,15 @@ def generate_market_indices(num_quarters: int, start_year: int, start_quarter: i
     policy = 0.0
 
     # Local initial values
-    local_init = {zone: {
-        'access': random.uniform(-0.05, 0.05),
-        'attract': random.uniform(-0.05, 0.05),
-        'nuisance': random.uniform(0.0, 0.10),
-        'tension': random.uniform(-0.02, 0.02)
-    } for zone in ZONES}
+    local_init = {
+        zone: {
+            "access": random.uniform(-0.05, 0.05),
+            "attract": random.uniform(-0.05, 0.05),
+            "nuisance": random.uniform(0.0, 0.10),
+            "tension": random.uniform(-0.02, 0.02),
+        }
+        for zone in ZONES
+    }
 
     year = start_year
     quarter = start_quarter
@@ -208,35 +209,39 @@ def generate_market_indices(num_quarters: int, start_year: int, start_quarter: i
         for zone in ZONES:
             loc = local_init[zone]
             # Slow drift
-            loc['access'] += random.uniform(-0.005, 0.005)
-            loc['attract'] += random.uniform(-0.005, 0.005)
-            loc['nuisance'] += random.uniform(-0.003, 0.003)
-            loc['tension'] += random.uniform(-0.005, 0.005)
+            loc["access"] += random.uniform(-0.005, 0.005)
+            loc["attract"] += random.uniform(-0.005, 0.005)
+            loc["nuisance"] += random.uniform(-0.003, 0.003)
+            loc["tension"] += random.uniform(-0.005, 0.005)
 
             # Clamp
-            loc['access'] = max(-0.10, min(0.10, loc['access']))
-            loc['attract'] = max(-0.10, min(0.10, loc['attract']))
-            loc['nuisance'] = max(0.0, min(0.20, loc['nuisance']))
-            loc['tension'] = max(-0.10, min(0.10, loc['tension']))
+            loc["access"] = max(-0.10, min(0.10, loc["access"]))
+            loc["attract"] = max(-0.10, min(0.10, loc["attract"]))
+            loc["nuisance"] = max(0.0, min(0.20, loc["nuisance"]))
+            loc["tension"] = max(-0.10, min(0.10, loc["tension"]))
 
-            locals_data.append({
-                'zone': zone,
-                'access': round(loc['access'], 4),
-                'attract': round(loc['attract'], 4),
-                'nuisance': round(loc['nuisance'], 4),
-                'tension': round(loc['tension'], 4)
-            })
+            locals_data.append(
+                {
+                    "zone": zone,
+                    "access": round(loc["access"], 4),
+                    "attract": round(loc["attract"], 4),
+                    "nuisance": round(loc["nuisance"], 4),
+                    "tension": round(loc["tension"], 4),
+                }
+            )
 
-        indices.append({
-            't': t,
-            'inflation': round(inflation, 4),
-            'rate': round(rate, 4),
-            'income': round(income, 4),
-            'unemployment': round(unemployment, 4),
-            'confidence': round(confidence, 4),
-            'policy': round(policy, 4),
-            'locals': locals_data
-        })
+        indices.append(
+            {
+                "t": t,
+                "inflation": round(inflation, 4),
+                "rate": round(rate, 4),
+                "income": round(income, 4),
+                "unemployment": round(unemployment, 4),
+                "confidence": round(confidence, 4),
+                "policy": round(policy, 4),
+                "locals": locals_data,
+            }
+        )
 
         # Next quarter
         quarter += 1
@@ -265,18 +270,18 @@ async def create_demo_user(db) -> ObjectId:
     The account carries the admin role because the seed exists to show the
     application, and the property and renovation catalogs are part of it.
     """
-    hashed_password = bcrypt.hashpw(
-        DEMO_PASSWORD.encode('utf-8'), bcrypt.gensalt()
-    ).decode('utf-8')
+    hashed_password = bcrypt.hashpw(DEMO_PASSWORD.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-    result = await db.users.insert_one({
-        "username": DEMO_USERNAME,
-        "email": DEMO_EMAIL,
-        "name": "Demo User",
-        "hashedPassword": hashed_password,
-        "roles": ["user", "admin"],
-        "createdAt": datetime.utcnow()
-    })
+    result = await db.users.insert_one(
+        {
+            "username": DEMO_USERNAME,
+            "email": DEMO_EMAIL,
+            "name": "Demo User",
+            "hashedPassword": hashed_password,
+            "roles": ["user", "admin"],
+            "createdAt": datetime.utcnow(),
+        }
+    )
     return result.inserted_id
 
 
@@ -297,16 +302,24 @@ async def seed_database():
 
     # Drop existing collections
     print("🗑️  Dropping existing collections...")
-    collections = ['users', 'properties', 'marketindex', 'listings',
-                   'portfolios', 'holdings', 'renovations', 'trades', 'pricehistory']
+    collections = [
+        "users",
+        "properties",
+        "marketindex",
+        "listings",
+        "portfolios",
+        "holdings",
+        "renovations",
+        "trades",
+        "pricehistory",
+    ]
     for coll in collections:
         await db[coll].drop()
 
     # 1. Create demo user with password
     print("👤 Creating demo user...")
     user_id = await create_demo_user(db)
-    print(f"   ✓ User created: {user_id} "
-          f"(username: {DEMO_USERNAME}, password: {DEMO_PASSWORD})")
+    print(f"   ✓ User created: {user_id} (username: {DEMO_USERNAME}, password: {DEMO_PASSWORD})")
 
     # 2. Generate properties
     print(f"🏠 Generating {NUM_PROPERTIES} properties...")
@@ -325,23 +338,21 @@ async def seed_database():
     print("🔨 Creating renovations catalog...")
     renovations = []
     for reno in RENOVATIONS:
-        renovations.append({
-            "code": reno['code'],
-            "label": reno['label'],
-            "cost": reno['cost'],
-            "durationQ": reno['durationQ'],
-            "delta": reno['delta']
-        })
+        renovations.append(
+            {
+                "code": reno["code"],
+                "label": reno["label"],
+                "cost": reno["cost"],
+                "durationQ": reno["durationQ"],
+                "delta": reno["delta"],
+            }
+        )
     await db.renovations.insert_many(renovations)
     print(f"   ✓ {len(renovations)} renovation types created")
 
     # 5. Create portfolio
     print("💰 Creating demo portfolio...")
-    portfolio = {
-        "userId": user_id,
-        "cash": INITIAL_CASH,
-        "createdAt": datetime.utcnow()
-    }
+    portfolio = {"userId": user_id, "cash": INITIAL_CASH, "createdAt": datetime.utcnow()}
     await db.portfolios.insert_one(portfolio)
     print(f"   ✓ Portfolio created with {INITIAL_CASH:,.0f} €")
 
@@ -351,18 +362,14 @@ async def seed_database():
 
     # Fetch all properties for pricing
     all_properties = await db.properties.find().to_list(length=None)
-    prop_dict = {str(p['_id']): p for p in all_properties}
+    prop_dict = {str(p["_id"]): p for p in all_properties}
 
     for market_idx in market_indices:
-        t = market_idx['t']
+        t = market_idx["t"]
 
         for prop in prop_dict.values():
             price = compute_property_price(prop, market_idx, add_noise=True)
-            price_history.append({
-                "propertyId": prop['_id'],
-                "t": t,
-                "price": round(price, 2)
-            })
+            price_history.append({"propertyId": prop["_id"], "t": t, "price": round(price, 2)})
 
     await db.pricehistory.insert_many(price_history)
     print(f"   ✓ {len(price_history)} price records created")
@@ -376,15 +383,17 @@ async def seed_database():
 
     # Get first quarter prices
     first_prices = await db.pricehistory.find({"t": first_t}).to_list(length=None)
-    price_map = {str(p['propertyId']): p['price'] for p in first_prices}
+    price_map = {str(p["propertyId"]): p["price"] for p in first_prices}
 
     for prop_id in property_ids:
-        listings.append({
-            "propertyId": prop_id,
-            "isAvailable": True,
-            "lastComputedPrice": price_map.get(str(prop_id), 0),
-            "lastT": first_t
-        })
+        listings.append(
+            {
+                "propertyId": prop_id,
+                "isAvailable": True,
+                "lastComputedPrice": price_map.get(str(prop_id), 0),
+                "lastT": first_t,
+            }
+        )
 
     await db.listings.insert_many(listings)
     print(f"   ✓ {len(listings)} listings created")

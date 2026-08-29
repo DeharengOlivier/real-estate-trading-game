@@ -10,6 +10,7 @@ The battery covers three separate ways a caller can be wrong:
 - entitled by omission (a user document written before ``roles`` existed);
 - not authenticated at all (missing, forged, expired or malformed token).
 """
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -25,18 +26,35 @@ from api.tests.conftest import api_client
 # needed; the authorization check must fire before the resource is looked up,
 # so a syntactically valid id that does not exist is enough.
 ADMIN_ENDPOINTS = [
-    ("post", "/admin/properties", {
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 120,
-        "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6, "base_ppm": 3000,
-    }),
+    (
+        "post",
+        "/admin/properties",
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 120,
+            "epc": 0.6,
+            "state": 0.7,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": 3000,
+        },
+    ),
     ("get", "/admin/properties", None),
     ("get", "/admin/properties/{property_id}", None),
     ("put", "/admin/properties/{property_id}", {"surface": 130}),
     ("delete", "/admin/properties/{property_id}", None),
-    ("post", "/admin/renovations", {
-        "code": "TEST_RENO", "label": "Test renovation", "cost": 10000,
-        "durationQ": 2, "delta": {"state": 0.1},
-    }),
+    (
+        "post",
+        "/admin/renovations",
+        {
+            "code": "TEST_RENO",
+            "label": "Test renovation",
+            "cost": 10000,
+            "durationQ": 2,
+            "delta": {"state": 0.1},
+        },
+    ),
     ("get", "/admin/renovations", None),
     ("put", "/admin/renovations/R_KITCHEN", {"cost": 1}),
     ("delete", "/admin/renovations/R_KITCHEN", None),
@@ -63,16 +81,12 @@ async def test_ordinary_player_is_refused_on_every_admin_endpoint(
     async with api_client() as client:
         response = await _call(client, method, path, body, headers)
 
-    assert response.status_code == 403, (
-        f"{method.upper()} {path} let an ordinary player through"
-    )
+    assert response.status_code == 403, f"{method.upper()} {path} let an ordinary player through"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("method,path,body", ADMIN_ENDPOINTS)
-async def test_a_user_without_the_roles_field_is_refused(
-    legacy_user_and_token, method, path, body
-):
+async def test_a_user_without_the_roles_field_is_refused(legacy_user_and_token, method, path, body):
     """A missing permission is an absent permission, never a wildcard."""
     _, _, headers = legacy_user_and_token
     path = path.format(property_id=str(ObjectId()))
@@ -89,11 +103,20 @@ async def test_an_admin_still_gets_through(test_user_and_token):
     _, _, headers = test_user_and_token
 
     async with api_client() as client:
-        response = await client.post("/admin/properties", headers=headers, json={
-            "zone": "Bruxelles-Centre", "type": "house", "surface": 120,
-            "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6,
-            "base_ppm": 3000,
-        })
+        response = await client.post(
+            "/admin/properties",
+            headers=headers,
+            json={
+                "zone": "Bruxelles-Centre",
+                "type": "house",
+                "surface": 120,
+                "epc": 0.6,
+                "state": 0.7,
+                "kitchen": 0.6,
+                "bath": 0.6,
+                "base_ppm": 3000,
+            },
+        )
 
     assert response.status_code == 201
 
@@ -108,14 +131,16 @@ async def test_an_ordinary_player_cannot_read_everybody_elses_trades(
 
     db = get_database()
     portfolio = await db.portfolios.find_one({"userId": admin_user["user_id"]})
-    await db.trades.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": ObjectId(),
-        "side": "buy",
-        "price": 250000.0,
-        "fees": 6250.0,
-        "quarter": "2020-1",
-    })
+    await db.trades.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": ObjectId(),
+            "side": "buy",
+            "price": 250000.0,
+            "fees": 6250.0,
+            "quarter": "2020-1",
+        }
+    )
 
     async with api_client() as client:
         response = await client.get("/admin/trades", headers=player_headers)
@@ -171,12 +196,15 @@ async def test_registration_persists_the_role_it_reports():
     was supposed to use it silently passes.
     """
     async with api_client() as client:
-        response = await client.post("/auth/register", json={
-            "username": "freshplayer",
-            "email": "fresh@example.com",
-            "name": "Fresh Player",
-            "password": "FreshPassword123",
-        })
+        response = await client.post(
+            "/auth/register",
+            json={
+                "username": "freshplayer",
+                "email": "fresh@example.com",
+                "name": "Fresh Player",
+                "password": "FreshPassword123",
+            },
+        )
 
     assert response.status_code == 201
     assert response.json()["user"]["roles"] == ["user"]
@@ -190,12 +218,15 @@ async def test_registration_persists_the_role_it_reports():
 async def test_a_freshly_registered_player_cannot_administer():
     """The full path, end to end: register, then try the admin surface."""
     async with api_client() as client:
-        registration = await client.post("/auth/register", json={
-            "username": "sneaky",
-            "email": "sneaky@example.com",
-            "name": "Sneaky Player",
-            "password": "SneakyPassword123",
-        })
+        registration = await client.post(
+            "/auth/register",
+            json={
+                "username": "sneaky",
+                "email": "sneaky@example.com",
+                "name": "Sneaky Player",
+                "password": "SneakyPassword123",
+            },
+        )
         token = registration.json()["access_token"]
 
         response = await client.delete(
@@ -210,13 +241,16 @@ async def test_a_freshly_registered_player_cannot_administer():
 async def test_a_player_cannot_grant_themselves_a_role_at_registration():
     """The role is assigned by the server, never accepted from the request."""
     async with api_client() as client:
-        response = await client.post("/auth/register", json={
-            "username": "selfpromoted",
-            "email": "selfpromoted@example.com",
-            "name": "Self Promoted",
-            "password": "SelfPromoted123",
-            "roles": ["user", "admin"],
-        })
+        response = await client.post(
+            "/auth/register",
+            json={
+                "username": "selfpromoted",
+                "email": "selfpromoted@example.com",
+                "name": "Self Promoted",
+                "password": "SelfPromoted123",
+                "roles": ["user", "admin"],
+            },
+        )
 
     assert response.status_code == 201
 
@@ -232,14 +266,10 @@ async def test_a_player_cannot_grant_themselves_a_role_at_registration():
 async def test_a_token_signed_with_another_key_is_refused(test_user_and_token):
     """A forged signature is an authentication failure, not an admin."""
     user_data, _, _ = test_user_and_token
-    forged = jwt.encode(
-        {"sub": str(user_data["user_id"])}, "not-the-real-key", algorithm=ALGORITHM
-    )
+    forged = jwt.encode({"sub": str(user_data["user_id"])}, "not-the-real-key", algorithm=ALGORITHM)
 
     async with api_client() as client:
-        response = await client.get(
-            "/admin/trades", headers={"Authorization": f"Bearer {forged}"}
-        )
+        response = await client.get("/admin/trades", headers={"Authorization": f"Bearer {forged}"})
 
     assert response.status_code == 401
 
@@ -249,9 +279,7 @@ async def test_a_token_with_no_subject_is_refused():
     token = jwt.encode({"nothing": "here"}, SECRET_KEY, algorithm=ALGORITHM)
 
     async with api_client() as client:
-        response = await client.get(
-            "/auth/me", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
 
@@ -260,20 +288,20 @@ async def test_a_token_with_no_subject_is_refused():
 async def test_a_token_for_a_deleted_user_is_refused():
     """The account can disappear while its token is still inside its lifetime."""
     db = get_database()
-    result = await db.users.insert_one({
-        "username": "ghost",
-        "email": "ghost@example.com",
-        "name": "Ghost",
-        "hashedPassword": "irrelevant",
-        "roles": ["user", "admin"],
-    })
+    result = await db.users.insert_one(
+        {
+            "username": "ghost",
+            "email": "ghost@example.com",
+            "name": "Ghost",
+            "hashedPassword": "irrelevant",
+            "roles": ["user", "admin"],
+        }
+    )
     token = create_access_token(data={"sub": str(result.inserted_id)})
     await db.users.delete_one({"_id": result.inserted_id})
 
     async with api_client() as client:
-        response = await client.get(
-            "/admin/trades", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = await client.get("/admin/trades", headers={"Authorization": f"Bearer {token}"})
 
     assert response.status_code == 401
 
@@ -287,9 +315,7 @@ async def test_an_expired_token_is_refused(test_user_and_token):
     )
 
     async with api_client() as client:
-        response = await client.get(
-            "/auth/me", headers={"Authorization": f"Bearer {expired}"}
-        )
+        response = await client.get("/auth/me", headers={"Authorization": f"Bearer {expired}"})
 
     assert response.status_code == 401
 
@@ -298,14 +324,15 @@ async def test_an_expired_token_is_refused(test_user_and_token):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("method,path", [
-    ("get", "/admin/trades"),
-    ("post", "/game/advance-quarter"),
-    ("get", "/portfolio/summary"),
-])
-async def test_no_credential_is_401_and_a_wrong_one_is_403(
-    ordinary_user_and_token, method, path
-):
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("get", "/admin/trades"),
+        ("post", "/game/advance-quarter"),
+        ("get", "/portfolio/summary"),
+    ],
+)
+async def test_no_credential_is_401_and_a_wrong_one_is_403(ordinary_user_and_token, method, path):
     """Two different refusals, and they must stay different.
 
     A caller with no Authorization header has not said who they are: 401, with
@@ -345,23 +372,37 @@ async def test_a_player_cannot_renovate_somebody_elses_property(
     db = get_database()
     portfolio = await db.portfolios.find_one({"userId": owner["user_id"]})
     renovation = await db.renovations.find_one({})
-    prop = await db.properties.insert_one({
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
-        "epc": 0.5, "state": 0.5, "kitchen": 0.5, "bath": 0.5, "base_ppm": 3000,
-    })
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop.inserted_id,
-        "buyPrice": 250_000.0,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [],
-    })
+    prop = await db.properties.insert_one(
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 100,
+            "epc": 0.5,
+            "state": 0.5,
+            "kitchen": 0.5,
+            "bath": 0.5,
+            "base_ppm": 3000,
+        }
+    )
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop.inserted_id,
+            "buyPrice": 250_000.0,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [],
+        }
+    )
 
     async with api_client() as client:
-        response = await client.post("/game/renovate", headers=intruder_headers, json={
-            "holdingId": str(holding.inserted_id),
-            "renoCode": renovation["code"],
-        })
+        response = await client.post(
+            "/game/renovate",
+            headers=intruder_headers,
+            json={
+                "holdingId": str(holding.inserted_id),
+                "renoCode": renovation["code"],
+            },
+        )
 
     assert response.status_code == 403
 
@@ -380,23 +421,37 @@ async def test_the_owner_can_renovate_their_own_property(test_user_and_token):
     db = get_database()
     portfolio = await db.portfolios.find_one({"userId": owner["user_id"]})
     renovation = await db.renovations.find_one({})
-    prop = await db.properties.insert_one({
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
-        "epc": 0.5, "state": 0.5, "kitchen": 0.5, "bath": 0.5, "base_ppm": 3000,
-    })
-    holding = await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": prop.inserted_id,
-        "buyPrice": 250_000.0,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [],
-    })
+    prop = await db.properties.insert_one(
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 100,
+            "epc": 0.5,
+            "state": 0.5,
+            "kitchen": 0.5,
+            "bath": 0.5,
+            "base_ppm": 3000,
+        }
+    )
+    holding = await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": prop.inserted_id,
+            "buyPrice": 250_000.0,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [],
+        }
+    )
 
     async with api_client() as client:
-        response = await client.post("/game/renovate", headers=headers, json={
-            "holdingId": str(holding.inserted_id),
-            "renoCode": renovation["code"],
-        })
+        response = await client.post(
+            "/game/renovate",
+            headers=headers,
+            json={
+                "holdingId": str(holding.inserted_id),
+                "renoCode": renovation["code"],
+            },
+        )
 
     assert response.status_code == 200, response.text
     stored = await db.holdings.find_one({"_id": holding.inserted_id})

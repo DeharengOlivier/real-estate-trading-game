@@ -2,6 +2,7 @@
 Charts router - Data visualization and analytics endpoints
 Single Responsibility: Provide data for charts and reports
 """
+
 import logging
 from collections import defaultdict
 from datetime import datetime
@@ -56,25 +57,27 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
     current_quarter = await get_current_quarter(db)
 
     # Fetch trades chronologically to reconstruct portfolio state
-    trades = await db.trades.find({
-        "portfolioId": portfolio_id
-    }).sort("ts", 1).to_list(length=None)
+    trades = await db.trades.find({"portfolioId": portfolio_id}).sort("ts", 1).to_list(length=None)
 
     # If no trades exist yet, fall back to current snapshot
     if not trades:
         holdings = await db.holdings.find({"portfolioId": portfolio_id}).to_list(length=None)
         equity_value = 0.0
         for holding in holdings:
-            equity_value += await get_property_current_price(db, holding["propertyId"], current_quarter)
+            equity_value += await get_property_current_price(
+                db, holding["propertyId"], current_quarter
+            )
 
         cash_value = float(portfolio.get("cash", 0.0))
         total_value = cash_value + equity_value
-        return [{
-            "quarter": current_quarter,
-            "equity": round(equity_value, 2),
-            "cash": round(cash_value, 2),
-            "total": round(total_value, 2)
-        }]
+        return [
+            {
+                "quarter": current_quarter,
+                "equity": round(equity_value, 2),
+                "cash": round(cash_value, 2),
+                "total": round(total_value, 2),
+            }
+        ]
 
     # Map trades by quarter and gather metadata
     trades_by_quarter = defaultdict(list)
@@ -141,10 +144,16 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
     # Preload price history for all relevant properties within the time window
     property_price_map: dict[str, list[tuple]] = {}
     if property_ids and quarter_sequence:
-        price_history = await db.pricehistory.find({
-            "propertyId": {"$in": list(property_ids)},
-            "t": {"$gte": quarter_sequence[0], "$lte": current_quarter}
-        }).sort("t", 1).to_list(length=None)
+        price_history = (
+            await db.pricehistory.find(
+                {
+                    "propertyId": {"$in": list(property_ids)},
+                    "t": {"$gte": quarter_sequence[0], "$lte": current_quarter},
+                }
+            )
+            .sort("t", 1)
+            .to_list(length=None)
+        )
 
         for record in price_history:
             prop_key = str(record["propertyId"])
@@ -198,9 +207,7 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
 
                 if quarter_price is None:
                     quarter_price = await get_property_current_price(
-                        db,
-                        info["property_id"],
-                        quarter
+                        db, info["property_id"], quarter
                     )
 
                 quarter_price = float(quarter_price or 0.0)
@@ -209,18 +216,22 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
             equity_value += quarter_price
 
         total_value = cash + equity_value
-        equity_history.append({
-            "quarter": quarter,
-            "equity": round(equity_value, 2),
-            "cash": round(cash, 2),
-            "total": round(total_value, 2)
-        })
+        equity_history.append(
+            {
+                "quarter": quarter,
+                "equity": round(equity_value, 2),
+                "cash": round(cash, 2),
+                "total": round(total_value, 2),
+            }
+        )
 
     return equity_history
 
 
 @router.get("/property/{property_id}")
-async def get_property_price_chart(property_id: str, current_user: dict = Depends(get_current_user)):
+async def get_property_price_chart(
+    property_id: str, current_user: dict = Depends(get_current_user)
+):
     """
     Get price history for a specific property
 
@@ -236,17 +247,17 @@ async def get_property_price_chart(property_id: str, current_user: dict = Depend
         raise HTTPException(status_code=404, detail="Property not found")
 
     # Get price history
-    price_history = await db.pricehistory.find({
-        "propertyId": prop_id
-    }).sort("t", 1).to_list(length=None)
+    price_history = (
+        await db.pricehistory.find({"propertyId": prop_id}).sort("t", 1).to_list(length=None)
+    )
 
-    quarters = [ph['t'] for ph in price_history]
-    prices = [ph['price'] for ph in price_history]
+    quarters = [ph["t"] for ph in price_history]
+    prices = [ph["price"] for ph in price_history]
 
     return {
         "propertyId": property_id,
-        "zone": property_data.get('zone'),
-        "type": property_data.get('type'),
+        "zone": property_data.get("zone"),
+        "type": property_data.get("type"),
         "quarters": quarters,
-        "prices": prices
+        "prices": prices,
     }

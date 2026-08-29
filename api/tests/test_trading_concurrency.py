@@ -17,6 +17,7 @@ The invariants asserted here outlive any particular implementation:
 - a property is never owned by two players at once;
 - a sale is never paid for twice.
 """
+
 import asyncio
 from datetime import datetime
 
@@ -44,16 +45,26 @@ def overlap_two_requests(monkeypatch):
 
 async def _create_listing(db, price):
     """Insert one property and its available listing, return the property id."""
-    prop = await db.properties.insert_one({
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
-        "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6, "base_ppm": 3000,
-    })
-    await db.listings.insert_one({
-        "propertyId": prop.inserted_id,
-        "isAvailable": True,
-        "lastComputedPrice": price,
-        "lastT": "2020-1",
-    })
+    prop = await db.properties.insert_one(
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 100,
+            "epc": 0.6,
+            "state": 0.7,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": 3000,
+        }
+    )
+    await db.listings.insert_one(
+        {
+            "propertyId": prop.inserted_id,
+            "isAvailable": True,
+            "lastComputedPrice": price,
+            "lastT": "2020-1",
+        }
+    )
     return prop.inserted_id
 
 
@@ -66,18 +77,14 @@ async def test_two_overlapping_buys_cannot_spend_the_same_cash_twice(
     db = get_database()
 
     # 205,000 covers one purchase at 200,000 + 2.5% fees (205,000) and no more.
-    await db.portfolios.update_one(
-        {"userId": user["user_id"]}, {"$set": {"cash": 205_000.0}}
-    )
+    await db.portfolios.update_one({"userId": user["user_id"]}, {"$set": {"cash": 205_000.0}})
     first = await _create_listing(db, 200_000.0)
     second = await _create_listing(db, 200_000.0)
 
     async with api_client() as client:
         responses = await asyncio.gather(
-            client.post("/trading/buy", headers=headers,
-                        json={"propertyId": str(first)}),
-            client.post("/trading/buy", headers=headers,
-                        json={"propertyId": str(second)}),
+            client.post("/trading/buy", headers=headers, json={"propertyId": str(first)}),
+            client.post("/trading/buy", headers=headers, json={"propertyId": str(second)}),
         )
 
     portfolio = await db.portfolios.find_one({"userId": user["user_id"]})
@@ -89,31 +96,23 @@ async def test_two_overlapping_buys_cannot_spend_the_same_cash_twice(
 
 
 @pytest.mark.asyncio
-async def test_the_losing_buyer_is_charged_nothing(
-    test_user_and_token, overlap_two_requests
-):
+async def test_the_losing_buyer_is_charged_nothing(test_user_and_token, overlap_two_requests):
     """A refused purchase must leave the balance exactly where it was."""
     user, _, headers = test_user_and_token
     db = get_database()
 
-    await db.portfolios.update_one(
-        {"userId": user["user_id"]}, {"$set": {"cash": 205_000.0}}
-    )
+    await db.portfolios.update_one({"userId": user["user_id"]}, {"$set": {"cash": 205_000.0}})
     first = await _create_listing(db, 200_000.0)
     second = await _create_listing(db, 200_000.0)
 
     async with api_client() as client:
         await asyncio.gather(
-            client.post("/trading/buy", headers=headers,
-                        json={"propertyId": str(first)}),
-            client.post("/trading/buy", headers=headers,
-                        json={"propertyId": str(second)}),
+            client.post("/trading/buy", headers=headers, json={"propertyId": str(first)}),
+            client.post("/trading/buy", headers=headers, json={"propertyId": str(second)}),
         )
 
     portfolio = await db.portfolios.find_one({"userId": user["user_id"]})
-    buy_trades = await db.trades.count_documents({
-        "portfolioId": portfolio["_id"], "side": "buy"
-    })
+    buy_trades = await db.trades.count_documents({"portfolioId": portfolio["_id"], "side": "buy"})
 
     # The balance alone would not catch the defect: two writes of an absolute
     # `cash - total_cost`, computed from the same stale read, also land on 0.
@@ -137,10 +136,8 @@ async def test_a_property_cannot_be_sold_to_two_players_at_once(
 
     async with api_client() as client:
         responses = await asyncio.gather(
-            client.post("/trading/buy", headers=headers_a,
-                        json={"propertyId": str(property_id)}),
-            client.post("/trading/buy", headers=headers_b,
-                        json={"propertyId": str(property_id)}),
+            client.post("/trading/buy", headers=headers_a, json={"propertyId": str(property_id)}),
+            client.post("/trading/buy", headers=headers_b, json={"propertyId": str(property_id)}),
         )
 
     owners = await db.holdings.count_documents({"propertyId": property_id})
@@ -161,16 +158,13 @@ async def test_the_refused_buyer_of_a_taken_property_is_charged_nothing(
 
     async with api_client() as client:
         responses = await asyncio.gather(
-            client.post("/trading/buy", headers=headers_a,
-                        json={"propertyId": str(property_id)}),
-            client.post("/trading/buy", headers=headers_b,
-                        json={"propertyId": str(property_id)}),
+            client.post("/trading/buy", headers=headers_a, json={"propertyId": str(property_id)}),
+            client.post("/trading/buy", headers=headers_b, json={"propertyId": str(property_id)}),
         )
 
-    player_owns = await db.holdings.count_documents({
-        "portfolioId": (await db.portfolios.find_one(
-            {"userId": player["user_id"]}))["_id"]
-    })
+    player_owns = await db.holdings.count_documents(
+        {"portfolioId": (await db.portfolios.find_one({"userId": player["user_id"]}))["_id"]}
+    )
     after = (await db.portfolios.find_one({"userId": player["user_id"]}))["cash"]
 
     # Whichever of the two lost, the loser paid nothing for nothing.
@@ -180,9 +174,7 @@ async def test_the_refused_buyer_of_a_taken_property_is_charged_nothing(
 
 
 @pytest.mark.asyncio
-async def test_the_same_holding_cannot_be_sold_twice(
-    test_user_and_token, overlap_two_requests
-):
+async def test_the_same_holding_cannot_be_sold_twice(test_user_and_token, overlap_two_requests):
     """Two overlapping sales of one holding must credit the player once."""
     user, _, headers = test_user_and_token
     db = get_database()
@@ -190,29 +182,25 @@ async def test_the_same_holding_cannot_be_sold_twice(
     property_id = await _create_listing(db, 200_000.0)
     portfolio = await db.portfolios.find_one({"userId": user["user_id"]})
     await db.portfolios.update_one({"_id": portfolio["_id"]}, {"$set": {"cash": 0.0}})
-    await db.listings.update_one(
-        {"propertyId": property_id}, {"$set": {"isAvailable": False}}
+    await db.listings.update_one({"propertyId": property_id}, {"$set": {"isAvailable": False}})
+    await db.holdings.insert_one(
+        {
+            "portfolioId": portfolio["_id"],
+            "propertyId": property_id,
+            "buyPrice": 200_000.0,
+            "buyDate": datetime(2020, 1, 1),
+            "works": [],
+        }
     )
-    await db.holdings.insert_one({
-        "portfolioId": portfolio["_id"],
-        "propertyId": property_id,
-        "buyPrice": 200_000.0,
-        "buyDate": datetime(2020, 1, 1),
-        "works": [],
-    })
 
     async with api_client() as client:
         responses = await asyncio.gather(
-            client.post("/trading/sell", headers=headers,
-                        json={"propertyId": str(property_id)}),
-            client.post("/trading/sell", headers=headers,
-                        json={"propertyId": str(property_id)}),
+            client.post("/trading/sell", headers=headers, json={"propertyId": str(property_id)}),
+            client.post("/trading/sell", headers=headers, json={"propertyId": str(property_id)}),
         )
 
     portfolio = await db.portfolios.find_one({"_id": portfolio["_id"]})
-    sell_trades = await db.trades.count_documents({
-        "portfolioId": portfolio["_id"], "side": "sell"
-    })
+    sell_trades = await db.trades.count_documents({"portfolioId": portfolio["_id"], "side": "sell"})
 
     assert sell_trades == 1, f"one holding, {sell_trades} sales recorded"
     # One sale at 200,000 nets 195,000 after the 2.5% commission.
@@ -248,9 +236,7 @@ async def test_a_purchase_beyond_the_balance_is_refused_and_charges_nothing(
 ):
     user, _, headers = test_user_and_token
     db = get_database()
-    await db.portfolios.update_one(
-        {"userId": user["user_id"]}, {"$set": {"cash": 1_000.0}}
-    )
+    await db.portfolios.update_one({"userId": user["user_id"]}, {"$set": {"cash": 1_000.0}})
     property_id = await _create_listing(db, 200_000.0)
 
     async with api_client() as client:

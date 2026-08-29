@@ -2,6 +2,7 @@
 Authentication utilities for Real Estate Simulation
 Simple JWT-based authentication
 """
+
 import os
 from datetime import datetime, timedelta
 
@@ -20,13 +21,15 @@ MINIMUM_SECRET_KEY_LENGTH = 32
 
 # Values that have shipped in this repository, in .env.example or in
 # docker-compose.yml. They are published, so they are not secrets.
-PUBLISHED_PLACEHOLDER_KEYS = frozenset({
-    "change-me-please",
-    "change-me-in-production",
-    "please-set-secret-key-in-env-file",
-    "your-secret-key",
-    "secret",
-})
+PUBLISHED_PLACEHOLDER_KEYS = frozenset(
+    {
+        "change-me-please",
+        "change-me-in-production",
+        "please-set-secret-key-in-env-file",
+        "your-secret-key",
+        "secret",
+    }
+)
 
 _KEY_HELP = (
     "Set SECRET_KEY to at least "
@@ -34,7 +37,7 @@ _KEY_HELP = (
     "with:\n"
     "    openssl rand -hex 32\n"
     "or, without openssl:\n"
-    "    python -c \"import secrets; print(secrets.token_hex(32))\""
+    '    python -c "import secrets; print(secrets.token_hex(32))"'
 )
 
 
@@ -88,13 +91,13 @@ security = HTTPBearer()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash"""
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password"""
     salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

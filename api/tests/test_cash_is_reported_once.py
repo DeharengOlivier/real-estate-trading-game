@@ -6,6 +6,7 @@ updated `cashBalance` again, so /auth/me answered 1,000,000 for the rest of the
 account's life no matter how much had been spent. Two fields holding the same
 quantity is one field holding a lie.
 """
+
 import pytest
 
 from api.database import get_database
@@ -13,25 +14,40 @@ from api.tests.conftest import api_client
 
 
 async def _register(client, username="spender"):
-    response = await client.post("/auth/register", json={
-        "username": username,
-        "email": f"{username}@example.com",
-        "name": "A Spender",
-        "password": "SpenderPassword123",
-    })
+    response = await client.post(
+        "/auth/register",
+        json={
+            "username": username,
+            "email": f"{username}@example.com",
+            "name": "A Spender",
+            "password": "SpenderPassword123",
+        },
+    )
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def _create_listing(db, price):
-    prop = await db.properties.insert_one({
-        "zone": "Bruxelles-Centre", "type": "house", "surface": 100,
-        "epc": 0.6, "state": 0.7, "kitchen": 0.6, "bath": 0.6, "base_ppm": 3000,
-    })
-    await db.listings.insert_one({
-        "propertyId": prop.inserted_id, "isAvailable": True,
-        "lastComputedPrice": price, "lastT": "2020-1",
-    })
+    prop = await db.properties.insert_one(
+        {
+            "zone": "Bruxelles-Centre",
+            "type": "house",
+            "surface": 100,
+            "epc": 0.6,
+            "state": 0.7,
+            "kitchen": 0.6,
+            "bath": 0.6,
+            "base_ppm": 3000,
+        }
+    )
+    await db.listings.insert_one(
+        {
+            "propertyId": prop.inserted_id,
+            "isAvailable": True,
+            "lastComputedPrice": price,
+            "lastT": "2020-1",
+        }
+    )
     return prop.inserted_id
 
 
@@ -44,8 +60,7 @@ async def test_the_balance_reported_after_a_purchase_is_the_one_that_was_charged
         registration = await _register(client)
         headers = {"Authorization": f"Bearer {registration['access_token']}"}
 
-        await client.post("/trading/buy", headers=headers,
-                          json={"propertyId": str(property_id)})
+        await client.post("/trading/buy", headers=headers, json={"propertyId": str(property_id)})
         me = await client.get("/auth/me", headers=headers)
         summary = await client.get("/portfolio/summary", headers=headers)
 
@@ -62,12 +77,15 @@ async def test_logging_back_in_reports_the_same_balance():
     async with api_client() as client:
         registration = await _register(client)
         headers = {"Authorization": f"Bearer {registration['access_token']}"}
-        await client.post("/trading/buy", headers=headers,
-                          json={"propertyId": str(property_id)})
+        await client.post("/trading/buy", headers=headers, json={"propertyId": str(property_id)})
 
-        login = await client.post("/auth/login", json={
-            "username": "spender", "password": "SpenderPassword123",
-        })
+        login = await client.post(
+            "/auth/login",
+            json={
+                "username": "spender",
+                "password": "SpenderPassword123",
+            },
+        )
 
     assert login.json()["user"]["cashBalance"] == pytest.approx(795_000.0)
 

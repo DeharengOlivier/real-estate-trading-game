@@ -6,6 +6,7 @@ the process can refuse, and it cannot be reached around. A test inside this
 process could only observe the key that was already accepted when the suite
 started.
 """
+
 import os
 import subprocess
 import sys
@@ -50,11 +51,14 @@ def test_the_refusal_says_how_to_produce_a_key():
     assert "openssl rand" in result.stderr or "secrets.token" in result.stderr
 
 
-@pytest.mark.parametrize("placeholder", [
-    "change-me-please",
-    "change-me-in-production",
-    "please-set-secret-key-in-env-file",
-])
+@pytest.mark.parametrize(
+    "placeholder",
+    [
+        "change-me-please",
+        "change-me-in-production",
+        "please-set-secret-key-in-env-file",
+    ],
+)
 def test_a_placeholder_key_is_refused(placeholder):
     """These three strings shipped in this repository. They are public."""
     result = _import_api_auth_with(placeholder)

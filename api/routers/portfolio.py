@@ -2,6 +2,7 @@
 Portfolio router - Portfolio management and holdings
 Single Responsibility: Portfolio operations and reporting
 """
+
 import logging
 from datetime import datetime
 
@@ -50,8 +51,8 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
 
-    portfolio_id = portfolio['_id']
-    cash = portfolio['cash']
+    portfolio_id = portfolio["_id"]
+    cash = portfolio["cash"]
 
     # The amount every new account starts with, named once in simulation.constants.
     INITIAL_CAPITAL = float(INITIAL_CASH)
@@ -64,16 +65,14 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
 
     # Value the holdings. One batched price lookup for the whole portfolio,
     # not one per property: this page used to cost a round trip per holding.
-    property_ids = [holding['propertyId'] for holding in holdings]
+    property_ids = [holding["propertyId"] for holding in holdings]
     prices = await get_property_current_prices(db, property_ids, current_t)
     equity = sum(prices.get(pid, 0) for pid in property_ids)
 
     # Every trade this portfolio ever made, read once. The year-to-date subset
     # is taken from it in memory rather than with a second query: it is the
     # same documents filtered on the same field.
-    all_trades = await db.trades.find({
-        "portfolioId": portfolio_id
-    }).to_list(length=None)
+    all_trades = await db.trades.find({"portfolioId": portfolio_id}).to_list(length=None)
 
     # Total P&L is the whole position measured against what the account
     # started with. Cash already carries every fee and renovation that was
@@ -88,35 +87,31 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     # have happened in an earlier year, so buy prices are collected from the
     # full history before the year-to-date pass reads them.
     buy_prices = {
-        str(trade['propertyId']): trade['price']
-        for trade in all_trades if trade['side'] == 'buy'
+        str(trade["propertyId"]): trade["price"] for trade in all_trades if trade["side"] == "buy"
     }
 
     pnl_ytd = 0.0
     ytd_buy_prices = {}
 
     for trade in all_trades:
-        if trade.get('ts') is None or trade['ts'] < year_start:
+        if trade.get("ts") is None or trade["ts"] < year_start:
             continue
 
-        prop_id_str = str(trade['propertyId'])
+        prop_id_str = str(trade["propertyId"])
 
-        if trade['side'] == 'buy':
-            ytd_buy_prices[prop_id_str] = trade['price']
-            pnl_ytd -= trade['fees']
-        elif trade['side'] == 'sell':
-            original_buy_price = (
-                ytd_buy_prices.get(prop_id_str)
-                or buy_prices.get(prop_id_str, 0)
-            )
-            pnl_ytd += (trade['price'] - trade['fees']) - original_buy_price
+        if trade["side"] == "buy":
+            ytd_buy_prices[prop_id_str] = trade["price"]
+            pnl_ytd -= trade["fees"]
+        elif trade["side"] == "sell":
+            original_buy_price = ytd_buy_prices.get(prop_id_str) or buy_prices.get(prop_id_str, 0)
+            pnl_ytd += (trade["price"] - trade["fees"]) - original_buy_price
 
     return PortfolioSummary(
         cash=round(cash, 2),
         equity=round(equity, 2),
         totalValue=round(total_value, 2),
         pnlTotal=round(pnl_total, 2),
-        pnlYTD=round(pnl_ytd, 2)
+        pnlYTD=round(pnl_ytd, 2),
     )
 
 
@@ -142,52 +137,44 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
     if not portfolio:
         return []
 
-    portfolio_id = portfolio['_id']
+    portfolio_id = portfolio["_id"]
     current_t = await get_current_quarter(db)
 
     # Get all holdings
     holdings = await db.holdings.find({"portfolioId": portfolio_id}).to_list(length=None)
 
     # Get all trades to find buy fees
-    all_trades = await db.trades.find({
-        "portfolioId": portfolio_id
-    }).to_list(length=None)
+    all_trades = await db.trades.find({"portfolioId": portfolio_id}).to_list(length=None)
 
     # Map propertyId -> buy fees
     buy_fees_map = {}
     for trade in all_trades:
-        if trade['side'] == 'buy':
-            prop_id_str = str(trade['propertyId'])
-            buy_fees_map[prop_id_str] = trade.get('fees', 0)
+        if trade["side"] == "buy":
+            prop_id_str = str(trade["propertyId"])
+            buy_fees_map[prop_id_str] = trade.get("fees", 0)
 
     # Everything the loop needs, read in three queries instead of three per
     # holding: the properties, their current prices, and the renovations any of
     # the works refer to.
-    property_ids = [holding['propertyId'] for holding in holdings]
-    properties = await db.properties.find(
-        {"_id": {"$in": property_ids}}
-    ).to_list(length=None)
-    properties_by_id = {prop['_id']: prop for prop in properties}
+    property_ids = [holding["propertyId"] for holding in holdings]
+    properties = await db.properties.find({"_id": {"$in": property_ids}}).to_list(length=None)
+    properties_by_id = {prop["_id"]: prop for prop in properties}
 
     prices = await get_property_current_prices(db, property_ids, current_t)
 
-    renovation_ids = [
-        work['renoId']
-        for holding in holdings
-        for work in holding.get('works', [])
-    ]
+    renovation_ids = [work["renoId"] for holding in holdings for work in holding.get("works", [])]
     renovation_costs_by_id = {}
     if renovation_ids:
         renovations = await db.renovations.find(
             {"_id": {"$in": list(set(renovation_ids))}}
         ).to_list(length=None)
-        renovation_costs_by_id = {reno['_id']: reno['cost'] for reno in renovations}
+        renovation_costs_by_id = {reno["_id"]: reno["cost"] for reno in renovations}
 
     results = []
     for holding in holdings:
-        property_id = holding['propertyId']
+        property_id = holding["propertyId"]
         prop_id_str = str(property_id)
-        buy_price = holding['buyPrice']
+        buy_price = holding["buyPrice"]
 
         prop = properties_by_id.get(property_id)
         if not prop:
@@ -199,8 +186,7 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
         buy_fees = buy_fees_map.get(prop_id_str, 0)
 
         renovation_costs = sum(
-            renovation_costs_by_id.get(work['renoId'], 0.0)
-            for work in holding.get('works', [])
+            renovation_costs_by_id.get(work["renoId"], 0.0) for work in holding.get("works", [])
         )
 
         # Total invested = buy price + purchase fees + renovation works
@@ -211,22 +197,24 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
         pnl_pct = (pnl / total_invested * 100) if total_invested > 0 else 0
 
         # Count ongoing works
-        ongoing_works = sum(1 for w in holding.get('works', []) if w['status'] == 'ongoing')
+        ongoing_works = sum(1 for w in holding.get("works", []) if w["status"] == "ongoing")
 
-        results.append(HoldingDetail(
-            holdingId=str(holding['_id']),
-            propertyId=str(property_id),
-            zone=prop['zone'],
-            type=prop['type'],
-            surface=prop['surface'],
-            buyPrice=round(buy_price, 2),
-            buyFees=round(buy_fees, 2),
-            renovationCosts=round(renovation_costs, 2),
-            totalInvested=round(total_invested, 2),
-            currentPrice=round(current_price, 2),
-            pnl=round(pnl, 2),
-            pnlPct=round(pnl_pct, 2),
-            ongoingWorks=ongoing_works
-        ))
+        results.append(
+            HoldingDetail(
+                holdingId=str(holding["_id"]),
+                propertyId=str(property_id),
+                zone=prop["zone"],
+                type=prop["type"],
+                surface=prop["surface"],
+                buyPrice=round(buy_price, 2),
+                buyFees=round(buy_fees, 2),
+                renovationCosts=round(renovation_costs, 2),
+                totalInvested=round(total_invested, 2),
+                currentPrice=round(current_price, 2),
+                pnl=round(pnl, 2),
+                pnlPct=round(pnl_pct, 2),
+                ongoingWorks=ongoing_works,
+            )
+        )
 
     return results

@@ -2,6 +2,7 @@
 Health check router - System health and status endpoints
 Single Responsibility: Monitor system health and dependencies
 """
+
 import logging
 
 from fastapi import APIRouter
@@ -32,7 +33,7 @@ async def health_check():
     health_status = {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "dependencies": {}
+        "dependencies": {},
     }
 
     # Check MongoDB

@@ -9,6 +9,7 @@ MongoDB and the tests ran against an in-memory one, so the two never met.
 They meet here. The demo user is created by the same function the seed calls,
 against the in-memory database, and then logs in through the real endpoint.
 """
+
 import pytest
 
 from api.database import get_database
@@ -26,10 +27,13 @@ async def test_the_seeded_account_can_log_in():
     await create_demo_user(db)
 
     async with api_client() as client:
-        response = await client.post("/auth/login", json={
-            "username": DEMO_USERNAME,
-            "password": DEMO_PASSWORD,
-        })
+        response = await client.post(
+            "/auth/login",
+            json={
+                "username": DEMO_USERNAME,
+                "password": DEMO_PASSWORD,
+            },
+        )
 
     assert response.status_code == 200, response.text
     assert response.json()["access_token"]
@@ -41,14 +45,15 @@ async def test_the_token_the_seeded_account_receives_identifies_it():
     await create_demo_user(db)
 
     async with api_client() as client:
-        login = await client.post("/auth/login", json={
-            "username": DEMO_USERNAME,
-            "password": DEMO_PASSWORD,
-        })
-        token = login.json()["access_token"]
-        me = await client.get(
-            "/auth/me", headers={"Authorization": f"Bearer {token}"}
+        login = await client.post(
+            "/auth/login",
+            json={
+                "username": DEMO_USERNAME,
+                "password": DEMO_PASSWORD,
+            },
         )
+        token = login.json()["access_token"]
+        me = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
 
     assert me.status_code == 200
     assert me.json()["username"] == DEMO_USERNAME
@@ -61,10 +66,13 @@ async def test_the_wrong_password_is_still_refused():
     await create_demo_user(db)
 
     async with api_client() as client:
-        response = await client.post("/auth/login", json={
-            "username": DEMO_USERNAME,
-            "password": DEMO_PASSWORD + "wrong",
-        })
+        response = await client.post(
+            "/auth/login",
+            json={
+                "username": DEMO_USERNAME,
+                "password": DEMO_PASSWORD + "wrong",
+            },
+        )
 
     assert response.status_code == 401
 
@@ -76,10 +84,13 @@ async def test_the_seeded_account_can_reach_the_admin_surface():
     await create_demo_user(db)
 
     async with api_client() as client:
-        login = await client.post("/auth/login", json={
-            "username": DEMO_USERNAME,
-            "password": DEMO_PASSWORD,
-        })
+        login = await client.post(
+            "/auth/login",
+            json={
+                "username": DEMO_USERNAME,
+                "password": DEMO_PASSWORD,
+            },
+        )
         token = login.json()["access_token"]
         response = await client.get(
             "/admin/renovations", headers={"Authorization": f"Bearer {token}"}

@@ -2,6 +2,7 @@
 Authentication router - Handles user registration, login, and profile
 Single Responsibility: User authentication and authorization
 """
+
 import logging
 import time
 from collections import defaultdict
@@ -44,14 +45,16 @@ async def check_rate_limit(username: str) -> bool:
 
     if redis is None:
         # Fallback to in-memory rate limiting if Redis is unavailable
-        attempts = [t for t in fallback_login_attempts[username] if now - t < LOGIN_ATTEMPT_TIMEFRAME]
+        attempts = [
+            t for t in fallback_login_attempts[username] if now - t < LOGIN_ATTEMPT_TIMEFRAME
+        ]
         attempts.append(now)
         fallback_login_attempts[username] = attempts
 
         if len(attempts) > LOGIN_ATTEMPT_LIMIT:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Too many login attempts. Try again in 5 minutes."
+                detail="Too many login attempts. Try again in 5 minutes.",
             )
         return True
 
@@ -80,7 +83,7 @@ async def check_rate_limit(username: str) -> bool:
     if attempt_count > LOGIN_ATTEMPT_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Try again in 5 minutes."
+            detail="Too many login attempts. Try again in 5 minutes.",
         )
 
     return True
@@ -132,8 +135,7 @@ async def register(user_data: UserRegister):
     existing_user = await db.users.find_one({"username": user_data.username})
     if existing_user:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Username already registered"
+            status_code=status.HTTP_409_CONFLICT, detail="Username already registered"
         )
 
     hashed_password = get_password_hash(user_data.password)
@@ -148,7 +150,7 @@ async def register(user_data: UserRegister):
         "name": user_data.name,
         "hashedPassword": hashed_password,
         "roles": list(DEFAULT_ROLES),
-        "createdAt": datetime.utcnow()
+        "createdAt": datetime.utcnow(),
     }
 
     try:
@@ -158,8 +160,7 @@ async def register(user_data: UserRegister):
         # between the check above and this line, or in the same instant.
         field = _duplicated_field(conflict)
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{field} already registered"
+            status_code=status.HTTP_409_CONFLICT, detail=f"{field} already registered"
         ) from conflict
 
     user_id = result.inserted_id
@@ -168,7 +169,7 @@ async def register(user_data: UserRegister):
     portfolio_data = {
         "userId": user_id,
         "cash": float(INITIAL_CASH),
-        "createdAt": datetime.utcnow()
+        "createdAt": datetime.utcnow(),
     }
     await db.portfolios.insert_one(portfolio_data)
 
@@ -189,8 +190,8 @@ async def register(user_data: UserRegister):
             "email": user_data.email,
             "name": user_data.name,
             "cashBalance": float(INITIAL_CASH),
-            "roles": list(DEFAULT_ROLES)
-        }
+            "roles": list(DEFAULT_ROLES),
+        },
     }
 
 
@@ -228,8 +229,8 @@ async def login(user_data: UserLogin):
             "email": user.get("email", ""),
             "name": user.get("name", ""),
             "cashBalance": await _cash_of(get_database(), user["_id"]),
-            "roles": user.get("roles", list(DEFAULT_ROLES))
-        }
+            "roles": user.get("roles", list(DEFAULT_ROLES)),
+        },
     }
 
 
@@ -248,5 +249,5 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         "id": str(current_user["_id"]),
         "username": current_user["username"],
         "cashBalance": await _cash_of(get_database(), current_user["_id"]),
-        "roles": current_user.get("roles", list(DEFAULT_ROLES))
+        "roles": current_user.get("roles", list(DEFAULT_ROLES)),
     }
