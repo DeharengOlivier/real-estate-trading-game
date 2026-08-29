@@ -55,6 +55,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY in .env, see .env.example}
       - API_HOST=0.0.0.0
       - API_PORT=8000
+      # Unset means the compose frontend on localhost:5173.
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
     depends_on:
       mongo:
         condition: service_healthy

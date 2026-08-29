@@ -5,6 +5,7 @@ Main file only handles application setup and router registration
 """
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
+from api.cors import ENV_VAR, allowed_origins_from_env
 from api.database import (
     close_mongo_connection,
     close_redis_connection,
@@ -59,16 +61,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
-# For production, you should restrict this to your frontend's domain
-origins = [
-    "http://localhost:5173",  # React local dev server
-    "http://127.0.0.1:5173",
-]
-
+# Which browser origins may call this API. Set CORS_ALLOWED_ORIGINS to a comma
+# separated list in any deployment that is not the local compose stack; see
+# api/cors.py for what is accepted and why a wildcard is not.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins_from_env(os.getenv(ENV_VAR)),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
