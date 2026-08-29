@@ -12,11 +12,10 @@ from api.models import PortfolioSummary, HoldingDetail
 from api.auth import get_current_user
 from api.services import (
     get_current_quarter,
-    get_property_current_price,
     get_property_current_prices,
     parse_quarter_string,
 )
-from seed.constants import INITIAL_CASH
+from simulation.constants import INITIAL_CASH
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
@@ -54,7 +53,7 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     portfolio_id = portfolio['_id']
     cash = portfolio['cash']
     
-    # The amount every new account starts with, named once in seed.constants.
+    # The amount every new account starts with, named once in simulation.constants.
     INITIAL_CAPITAL = float(INITIAL_CASH)
     
     # Get current quarter

@@ -199,7 +199,7 @@ async def _seed_baseline(db):
     assert an exact item count stay deterministic; tests that need a property
     create their own.
     """
-    from seed.constants import ZONES, RENOVATIONS
+    from simulation.constants import ZONES, RENOVATIONS
 
     locals_data = [
         {"zone": z, "access": 0.0, "attract": 0.0, "nuisance": 0.05, "tension": 0.0}

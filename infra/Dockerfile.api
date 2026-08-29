@@ -6,9 +6,10 @@ WORKDIR /app
 COPY api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application
+# Copy application. The seed scripts are not here: the API imports the market
+# parameters from simulation/, and nothing else from seed/.
 COPY api ./api
-COPY seed ./seed
+COPY simulation ./simulation
 
 # Expose port
 EXPOSE 8000

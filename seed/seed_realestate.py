@@ -17,7 +17,7 @@ import bcrypt
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 import numpy as np
-from seed.constants import *
+from simulation.constants import *
 
 
 def get_quarter_string(year: int, quarter: int) -> str:

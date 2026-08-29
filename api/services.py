@@ -6,12 +6,8 @@ import random
 from typing import Dict, List
 from datetime import datetime
 from bson import ObjectId
-import sys
-import os
 
-# Import constants from seed
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from seed.constants import (
+from simulation.constants import (
     A_INF, A_RATE, A_INC, A_UNEMP, A_CONF, A_POL,
     B_ACC, B_ATTR, B_NUI, B_TENS,
     W_EPC, W_STATE, W_KITCHEN, W_BATH,

@@ -12,7 +12,7 @@ import logging
 from pymongo.errors import DuplicateKeyError
 
 from api.database import get_database, get_redis_client
-from seed.constants import INITIAL_CASH
+from simulation.constants import INITIAL_CASH
 from api.models import UserRegister, UserLogin, Token
 from api.auth import (
     create_access_token, get_password_hash, authenticate_user,

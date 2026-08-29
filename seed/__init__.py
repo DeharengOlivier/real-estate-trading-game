@@ -12,24 +12,20 @@ Purpose:
     - Prepares game for first-time play
 
 Package Contents:
-    - constants.py: Business constants, formulas, and Belgian market data
     - seed_realestate.py: Database seeding script
+
+    The market parameters it generates from live in simulation/constants.py,
+    because the API prices with the same ones on every request.
 
 Why this __init__.py file exists:
     This file marks seed/ as a Python package, enabling:
     
-    1. Module Imports: Allows constants.py to be imported:
-        from seed.constants import ZONES, BASE_PPM, RENOVATIONS
-    
-    2. Docker Execution: The seed container can execute:
+    1. Docker Execution: The seed container can execute:
         python -m seed.seed_realestate
         
-    3. Code Organization: Separates seed logic from API code
-    
-    Without this file:
-        - Docker seed container would fail with import errors
-        - Constants could not be shared between seed modules
-        - Package would not be recognized by Python
+    2. Code Organization: Separates seed logic from API code
+
+    Without this file the seed container would fail with import errors.
 
 Seeding Process (seed_realestate.py):
     1. Connect to MongoDB
