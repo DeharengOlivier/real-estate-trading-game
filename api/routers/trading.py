@@ -5,7 +5,7 @@ Single Responsibility: Property transactions and market operations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +21,19 @@ router = APIRouter(prefix="/trading", tags=["Trading"])
 
 # Charged on both sides of a trade, on the price of the property.
 TRANSACTION_FEE_RATE = 0.025
+
+# The sort the caller may ask for, and the document field each one means. A
+# closed set rather than a string compared against a few known values: a typo
+# used to fall through to price and answer 200, sorted by something the caller
+# never asked for.
+SortField = Literal["price", "surface", "zone"]
+SortOrder = Literal["asc", "desc"]
+
+SORT_FIELDS: dict[str, str] = {
+    "price": "lastComputedPrice",
+    "surface": "property.surface",
+    "zone": "property.zone",
+}
 
 
 def _first_day_of_quarter(quarter: str) -> datetime:
@@ -50,8 +63,8 @@ async def get_listings(
     maxPrice: float | None = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(50, ge=1, le=200, description="Number of results per page"),
-    sortBy: str = Query("price", description="Sort by: price, surface, zone"),
-    sortOrder: str = Query("asc", description="Sort order: asc or desc"),
+    sortBy: SortField = Query("price", description="Sort by: price, surface or zone"),
+    sortOrder: SortOrder = Query("asc", description="Sort order: asc or desc"),
 ):
     """
     Get available property listings with filters and pagination.
@@ -99,15 +112,10 @@ async def get_listings(
     if match_stage:
         pipeline.append({"$match": match_stage})
 
-    # 5. Define the sort stage
-    sort_field = "lastComputedPrice"
-    if sortBy == "surface":
-        sort_field = "property.surface"
-    elif sortBy == "zone":
-        sort_field = "property.zone"
-
-    sort_order_val = 1 if sortOrder.lower() == "asc" else -1
-    sort_stage = {"$sort": {sort_field: sort_order_val}}
+    # 5. Define the sort stage. Both parameters are already one of the accepted
+    # values, so there is nothing left to check and no default to fall through
+    # to: an unknown field was refused at the boundary with a 422.
+    sort_stage = {"$sort": {SORT_FIELDS[sortBy]: 1 if sortOrder == "asc" else -1}}
 
     # 6. Use $facet for pagination and total count in one query
     facet_stage = {
