@@ -194,6 +194,7 @@ docker compose down -v
 | `REDIS_URL` | `redis://redis:6379` | Rate-limiter store. Without it the limiter falls back to a per-process counter, which protects a single replica only. |
 | `CORS_ALLOWED_ORIGINS` | the local frontend | Comma-separated browser origins allowed to call the API. A wildcard is refused: this API answers with credentials, and browsers do not send credentials to a wildcard origin. |
 | `VITE_API_URL` | `http://localhost:8000` | API base URL baked into the frontend build. |
+| `UVICORN_WORKERS` | `1` | Worker processes. One worker uses one core; see Load below for what raising it buys. The rate limiter lives in Redis, so workers share one count rather than each keeping their own. |
 
 `.env.example` is the full list. Never commit a real `.env`.
 
@@ -262,6 +263,42 @@ npm test          # vitest + testing-library
   failed logins and rate-limit hits are logged as security events.
 - **Vulnerability reports**: see `SECURITY.md`.
 
+## Load
+
+`scripts/load.py` puts the read path under bounded concurrency and reports what
+it does. It has been run, and these are its numbers, on one laptop with the
+whole stack and the load generator on the same machine.
+
+```bash
+python -m scripts.load --users 50 --requests 2000 [--token JWT]
+```
+
+With the default single uvicorn worker:
+
+| concurrent callers | throughput | p50 | p95 | failures |
+|---|---|---|---|---|
+| 10 | 386 req/s | 23 ms | 43 ms | 0 |
+| 25 | 405 req/s | 62 ms | 110 ms | 0 |
+| 50 | 165 req/s | 206 ms | 881 ms | 0 |
+| 100 | 103 req/s | 506 ms | 3 278 ms | 0 |
+
+Nothing ever failed: no error, no timeout, no exhausted pool. What happens past
+25 callers is queueing, and the API's own logs say where it is not: for the
+100-caller run the server reported `duration_ms` p50 of 7.2 ms while the client
+measured p50 612 ms. The handlers were not the slow part.
+
+One uvicorn worker is one core. `UVICORN_WORKERS=4` on the same load:
+
+| concurrent callers | throughput | p95 |
+|---|---|---|
+| 25 | 322 req/s | 198 ms |
+| 50 | 241 req/s | 637 ms |
+| 100 | 180 req/s | 1 710 ms |
+
+That is +75% throughput and a halved p95 at 100 callers. The remaining ceiling
+is the laptop: the load generator, Docker Desktop's network stack and the
+database are all competing for the same cores.
+
 ## Backup and restore
 
 The seeded market can be rebuilt at any time by re-running the seed. What
@@ -314,7 +351,8 @@ An honest list of what is still true.
 - **Tokens live 24 hours with no rotation and no revocation list.** Logging out
   drops the token in the browser; it stays valid until it expires.
 - **Rate limiting covers login only**, and its fallback is per process. A
-  deployment with more than one replica needs Redis to be present, not optional.
+  deployment with more than one replica, or more than one uvicorn worker, needs
+  Redis to be present rather than optional.
 - **Trade orchestration still lives in the routers.** The pricing model is in
   `simulation/` and `services.py`; the buy and sell flows are not yet behind a
   domain layer, so they can only be tested through HTTP.

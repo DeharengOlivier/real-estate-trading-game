@@ -14,5 +14,9 @@ COPY simulation ./simulation
 # Expose port
 EXPOSE 8000
 
-# Run FastAPI with uvicorn (without --reload for production-like behavior)
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI with uvicorn (without --reload for production-like behavior).
+#
+# One worker is one core, whatever the machine has. UVICORN_WORKERS decides how
+# many, defaulting to 1 so a laptop stack stays a laptop stack. `exec` keeps
+# uvicorn as PID 1, so a `docker stop` reaches it rather than the shell.
+CMD ["sh", "-c", "exec uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-1}"]
