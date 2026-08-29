@@ -81,7 +81,7 @@ jobs:
         run: npm audit --audit-level=moderate
 
   ui:
-    name: Frontend builds
+    name: Frontend lints, tests and builds
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -93,6 +93,12 @@ jobs:
       - name: npm ci
         working-directory: ui
         run: npm ci
+      - name: lint
+        working-directory: ui
+        run: npm run lint
+      - name: test
+        working-directory: ui
+        run: npm test
       - name: build
         working-directory: ui
         run: npm run build
