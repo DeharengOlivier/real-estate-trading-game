@@ -262,6 +262,34 @@ npm test          # vitest + testing-library
   failed logins and rate-limit hits are logged as security events.
 - **Vulnerability reports**: see `SECURITY.md`.
 
+## Backup and restore
+
+The seeded market can be rebuilt at any time by re-running the seed. What
+cannot is everything a player did afterwards: accounts, portfolios, holdings
+and trades.
+
+```bash
+scripts/backup.sh [destination]     # default ./backups, prints the archive path
+scripts/restore.sh <archive.gz>     # drops and replaces, asks before it does
+```
+
+**The drill has been run, and this is its record.** A backup nobody has ever
+restored is a belief, not a backup.
+
+| Step | Result |
+|---|---|
+| State to save | demo account, cash 847 815.38, one holding in Charleroi-Ville bought at 148 472.80, 2 trades |
+| `scripts/backup.sh` | `realestate-20260829T013720Z.archive.gz`, 90 627 bytes |
+| Destruction | every holding and trade deleted, every portfolio balance set to 1 |
+| State after destruction | cash 1.0, no holdings, 0 trades (confirmed through the API, not only in the shell) |
+| `scripts/restore.sh` | cash 847 815.38, holding Charleroi-Ville at 148 472.80, 2 trades, 300 properties, 3 users |
+| Indexes after restore | every unique index present (`username_1`, `email_1`, `userId_1`, `propertyId_1`, `portfolioId_1_propertyId_1`, `t_1`) |
+| Constraint after restore | registering `demo` a second time still answers 409 |
+
+The index check is the part worth keeping: a restore that brought the documents
+back without their unique indexes would look like a success and would have
+silently removed the integrity layer.
+
 ## Interface
 
 Built for a 375px screen first; the desktop layout is added by `min-width`
