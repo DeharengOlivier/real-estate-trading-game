@@ -10,6 +10,8 @@ from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pydantic.functional_validators import AfterValidator
 
+from api.clock import utc_now
+
 
 class PyObjectId(ObjectId):
     """Custom ObjectId type for Pydantic"""
@@ -77,7 +79,7 @@ class User(BaseModel):
     name: str
     hashedPassword: str  # bcrypt hash, never the password itself
     roles: list[str] = Field(default_factory=lambda: ["user"])
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    createdAt: datetime = Field(default_factory=utc_now)
 
     model_config = DOCUMENT_MODEL_CONFIG
 
@@ -142,7 +144,7 @@ class Property(BaseModel):
     kitchen: float = Field(ge=0, le=1)  # Kitchen quality score [0,1]
     bath: float = Field(ge=0, le=1)  # Bathroom quality score [0,1]
     base_ppm: float = Field(gt=0)  # Base price per m² for zone/type
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    createdAt: datetime = Field(default_factory=utc_now)
 
     model_config = DOCUMENT_MODEL_CONFIG
 
@@ -191,7 +193,7 @@ class Portfolio(BaseModel):
     id: PyObjectId | None = Field(default=None, alias="_id")
     userId: PyObjectId
     cash: float = Field(ge=0)
-    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    createdAt: datetime = Field(default_factory=utc_now)
 
     model_config = DOCUMENT_MODEL_CONFIG
 
@@ -212,7 +214,7 @@ class Holding(BaseModel):
     portfolioId: PyObjectId
     propertyId: PyObjectId
     buyPrice: float = Field(ge=0)
-    buyDate: datetime = Field(default_factory=datetime.utcnow)
+    buyDate: datetime = Field(default_factory=utc_now)
     works: list[WorkItem] = []
 
     model_config = DOCUMENT_MODEL_CONFIG
@@ -250,7 +252,7 @@ class Trade(BaseModel):
     side: Literal["buy", "sell"]
     price: float = Field(ge=0)
     fees: float = Field(ge=0)
-    ts: datetime = Field(default_factory=datetime.utcnow)
+    ts: datetime = Field(default_factory=utc_now)
 
     model_config = DOCUMENT_MODEL_CONFIG
 

@@ -12,6 +12,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.auth import get_current_user
+from api.clock import as_utc
 from api.database import get_database
 from api.identifiers import parse_object_id
 from api.services import (
@@ -99,7 +100,9 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
 
     # Ensure trades are ordered within each quarter
     for quarter_trades in trades_by_quarter.values():
-        quarter_trades.sort(key=lambda t: t.get("ts", datetime.min))
+        # Sorted on a common zone: a naive value from the driver and an aware
+        # one from a document built in memory are otherwise incomparable.
+        quarter_trades.sort(key=lambda t: as_utc(t.get("ts") or datetime.min))
 
     # Determine starting cash by reversing trades
     cash_now = float(portfolio.get("cash", 0.0))

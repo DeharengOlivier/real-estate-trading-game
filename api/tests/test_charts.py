@@ -7,6 +7,7 @@ from datetime import datetime
 import pytest
 from bson import ObjectId
 
+from api.clock import utc_now
 from api.database import get_database
 from api.tests.conftest import api_client
 
@@ -54,7 +55,7 @@ async def test_portfolio_equity_with_trades(test_user_and_token):
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": 4000,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     prop_id = prop_result.inserted_id
@@ -129,7 +130,7 @@ async def test_property_price_chart_series(test_user_and_token):
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": 3500,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     prop_id = prop_result.inserted_id

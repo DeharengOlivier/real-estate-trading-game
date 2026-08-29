@@ -2,10 +2,9 @@
 Tests for Real Estate Game API
 """
 
-from datetime import datetime
-
 import pytest
 
+from api.clock import utc_now
 from api.database import get_database
 from api.tests.conftest import api_client
 
@@ -39,7 +38,7 @@ async def test_buy_reduces_cash_and_creates_holding(test_user_and_token):
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": 4200,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
 
@@ -104,7 +103,7 @@ async def test_sell_creates_trade_and_removes_holding(test_user_and_token):
             "kitchen": 0.7,
             "bath": 0.7,
             "base_ppm": 4800,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
 
@@ -132,7 +131,7 @@ async def test_sell_creates_trade_and_removes_holding(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": property_result.inserted_id,
             "buyPrice": buy_price,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [],
         }
     )
@@ -174,7 +173,7 @@ async def test_listings_filters():
                 "state": 0.6,
                 "kitchen": 0.6,
                 "bath": 0.6,
-                "createdAt": datetime.utcnow(),
+                "createdAt": utc_now(),
             }
         )
 

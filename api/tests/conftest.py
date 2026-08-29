@@ -11,7 +11,6 @@ The test suite runs with NO external services: MongoDB is replaced by
 import asyncio
 import contextlib
 import os
-from datetime import datetime
 from typing import Any
 
 # api.auth refuses to import without a usable SECRET_KEY, which is the point of
@@ -28,6 +27,7 @@ from mongomock_motor import AsyncMongoMockClient
 
 import api.database as database
 from api.auth import create_access_token, get_password_hash
+from api.clock import utc_now
 from api.main import app
 
 # Reusable singletons for the whole test session. Keeping a single mongomock
@@ -276,7 +276,7 @@ async def test_user_and_token():
         "name": "Test User",
         "hashedPassword": get_password_hash(password),
         "roles": ["user", "admin"],
-        "createdAt": datetime.utcnow(),
+        "createdAt": utc_now(),
     }
 
     result = await db.users.insert_one(user_data)
@@ -286,7 +286,7 @@ async def test_user_and_token():
         {
             "userId": user_id,
             "cash": 1000000.0,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
 
@@ -323,7 +323,7 @@ async def ordinary_user_and_token():
             "name": "Ordinary Player",
             "hashedPassword": get_password_hash(password),
             "roles": ["user"],
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     user_id = result.inserted_id
@@ -332,7 +332,7 @@ async def ordinary_user_and_token():
         {
             "userId": user_id,
             "cash": 1000000.0,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
 
@@ -360,7 +360,7 @@ async def legacy_user_and_token():
             "email": "legacy@example.com",
             "name": "Legacy User",
             "hashedPassword": get_password_hash("LegacyPassword123"),
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     user_id = result.inserted_id
@@ -369,7 +369,7 @@ async def legacy_user_and_token():
         {
             "userId": user_id,
             "cash": 1000000.0,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
 

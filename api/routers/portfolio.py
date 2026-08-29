@@ -4,11 +4,12 @@ Single Responsibility: Portfolio operations and reporting
 """
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.auth import get_current_user
+from api.clock import as_utc
 from api.database import get_database
 from api.models import HoldingDetail, PortfolioSummary
 from api.services import (
@@ -81,7 +82,7 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     pnl_total = total_value - INITIAL_CAPITAL
 
     current_year = parse_quarter_string(current_t)[0]
-    year_start = datetime(current_year, 1, 1)
+    year_start = datetime(current_year, 1, 1, tzinfo=UTC)
 
     # A sale is scored against the purchase that opened the position, which may
     # have happened in an earlier year, so buy prices are collected from the
@@ -94,7 +95,7 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     ytd_buy_prices = {}
 
     for trade in all_trades:
-        if trade.get("ts") is None or trade["ts"] < year_start:
+        if trade.get("ts") is None or as_utc(trade["ts"]) < year_start:
             continue
 
         prop_id_str = str(trade["propertyId"])

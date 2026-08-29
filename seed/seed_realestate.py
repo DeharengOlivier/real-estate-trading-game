@@ -7,7 +7,7 @@ import asyncio
 import math
 import os
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 
 import bcrypt
 from bson import ObjectId
@@ -152,7 +152,7 @@ def generate_properties(num: int) -> list[dict]:
                 "kitchen": round(kitchen, 3),
                 "bath": round(bath, 3),
                 "base_ppm": base_ppm,
-                "createdAt": datetime.utcnow(),
+                "createdAt": datetime.now(UTC),
             }
         )
 
@@ -279,7 +279,7 @@ async def create_demo_user(db) -> ObjectId:
             "name": "Demo User",
             "hashedPassword": hashed_password,
             "roles": ["user", "admin"],
-            "createdAt": datetime.utcnow(),
+            "createdAt": datetime.now(UTC),
         }
     )
     return result.inserted_id
@@ -352,7 +352,7 @@ async def seed_database():
 
     # 5. Create portfolio
     print("💰 Creating demo portfolio...")
-    portfolio = {"userId": user_id, "cash": INITIAL_CASH, "createdAt": datetime.utcnow()}
+    portfolio = {"userId": user_id, "cash": INITIAL_CASH, "createdAt": datetime.now(UTC)}
     await db.portfolios.insert_one(portfolio)
     print(f"   ✓ Portfolio created with {INITIAL_CASH:,.0f} €")
 

@@ -3,11 +3,10 @@ Tests for the game router: renovation catalog, starting renovations,
 advancing quarters, and current-quarter reporting.
 """
 
-from datetime import datetime
-
 import pytest
 from bson import ObjectId
 
+from api.clock import utc_now
 from api.database import get_database
 from api.tests.conftest import api_client
 
@@ -23,7 +22,7 @@ async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80, ba
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": base_ppm,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     return result.inserted_id
@@ -85,7 +84,7 @@ async def test_renovate_unknown_code(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": 300000,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [],
         }
     )
@@ -110,7 +109,7 @@ async def test_renovate_insufficient_funds(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": 300000,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [],
         }
     )
@@ -135,7 +134,7 @@ async def test_renovate_success_deducts_cash_and_adds_work(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": 300000,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [],
         }
     )
@@ -182,7 +181,7 @@ async def test_advance_quarter_completes_renovation_and_updates_prices(test_user
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": 400000,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [
                 {"renoId": reno["_id"], "startT": "2020-1", "endT": "2020-2", "status": "ongoing"}
             ],

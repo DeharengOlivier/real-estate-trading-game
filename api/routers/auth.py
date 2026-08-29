@@ -6,7 +6,7 @@ Single Responsibility: User authentication and authorization
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 from itertools import count
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,6 +20,7 @@ from api.auth import (
     get_current_user,
     get_password_hash,
 )
+from api.clock import utc_now
 from api.database import get_database, get_redis_client
 from api.models import Token, UserLogin, UserRegister
 from simulation.constants import INITIAL_CASH
@@ -150,7 +151,7 @@ async def register(user_data: UserRegister):
         "name": user_data.name,
         "hashedPassword": hashed_password,
         "roles": list(DEFAULT_ROLES),
-        "createdAt": datetime.utcnow(),
+        "createdAt": utc_now(),
     }
 
     try:
@@ -169,7 +170,7 @@ async def register(user_data: UserRegister):
     portfolio_data = {
         "userId": user_id,
         "cash": float(INITIAL_CASH),
-        "createdAt": datetime.utcnow(),
+        "createdAt": utc_now(),
     }
     await db.portfolios.insert_one(portfolio_data)
 

@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 
+from api.clock import utc_now
 from api.database import get_database
 from api.tests.conftest import api_client
 
@@ -21,7 +22,7 @@ async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80, ba
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": base_ppm,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     return result.inserted_id

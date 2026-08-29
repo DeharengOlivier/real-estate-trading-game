@@ -7,6 +7,7 @@ import logging
 
 from fastapi import APIRouter
 
+from api.clock import utc_now
 from api.database import get_database, get_redis
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,10 @@ async def health_check():
     - Individual service statuses
     - Timestamp
     """
-    from datetime import datetime
 
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_now().isoformat(),
         "dependencies": {},
     }
 

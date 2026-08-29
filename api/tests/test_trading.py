@@ -2,11 +2,10 @@
 Tests for the trading router: listings filters/pagination, buy, and sell.
 """
 
-from datetime import datetime
-
 import pytest
 from bson import ObjectId
 
+from api.clock import utc_now
 from api.database import get_database
 from api.tests.conftest import api_client
 
@@ -25,7 +24,7 @@ async def _make_property_with_listing(
             "kitchen": 0.6,
             "bath": 0.6,
             "base_ppm": base_ppm,
-            "createdAt": datetime.utcnow(),
+            "createdAt": utc_now(),
         }
     )
     await db.listings.insert_one(
@@ -266,7 +265,7 @@ async def test_sell_blocked_by_ongoing_renovation(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": 420000,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [
                 {"renoId": ObjectId(), "startT": "2020-1", "endT": "2020-3", "status": "ongoing"}
             ],
@@ -306,7 +305,7 @@ async def test_sell_computes_pnl_and_credits_cash(test_user_and_token):
             "portfolioId": portfolio["_id"],
             "propertyId": prop_id,
             "buyPrice": buy_price,
-            "buyDate": datetime.utcnow(),
+            "buyDate": utc_now(),
             "works": [],
         }
     )
