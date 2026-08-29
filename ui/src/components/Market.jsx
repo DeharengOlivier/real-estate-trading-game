@@ -1,25 +1,31 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api'
+
+// Matches the API's own default. Kept here as a named constant because it
+// appears both in the request and in the "showing N of M" line.
+const PAGE_SIZE = 50
 
 // isAdmin decides what this component offers. It is not a security boundary:
 // the server checks the role again on every request, and would refuse these
 // calls from a player who reached them another way. It is here so the
 // interface does not present a button that is going to answer 403.
 function Market({ onPurchase, showMessage, isAdmin = false }) {
-  const [listings, setListings] = useState([])
+  // Two distinct things, deliberately kept apart:
+  //   filters  what the user is typing, which changes on every keystroke;
+  //   query    what was actually asked for, which changes only on Search or a
+  //            page click and is the single input to the fetch.
+  // Collapsing them is what let a page click and a stale closure disagree
+  // about which page was being loaded.
   const [filters, setFilters] = useState({
     zone: '',
     type: '',
     minPrice: '',
     maxPrice: ''
   })
+  const [query, setQuery] = useState({ zone: '', type: '', minPrice: '', maxPrice: '', page: 1 })
+  const [listings, setListings] = useState([])
+  const [results, setResults] = useState({ total: 0, totalPages: 1, limit: PAGE_SIZE })
   const [loading, setLoading] = useState(false)
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 50,
-    total: 0,
-    totalPages: 1
-  })
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newProperty, setNewProperty] = useState({
     zone: 'Bruxelles-Centre',
@@ -27,36 +33,44 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
     surface: 100
   })
 
-  useEffect(() => {
-    loadListings()
-  }, [])
-
-  const loadListings = async () => {
+  // The response tells us how many results exist. It does not tell us which
+  // page the user is on: `query` does, and it is the only thing that does.
+  const loadListings = useCallback(async (asked) => {
     setLoading(true)
     try {
-      const data = await api.getListings({ ...filters, page: pagination.page, limit: pagination.limit })
+      const data = await api.getListings({ ...asked, limit: PAGE_SIZE })
       setListings(data.items || [])
-      setPagination({
-        page: data.page || 1,
-        limit: data.limit || 50,
+      setResults({
         total: data.total || 0,
-        totalPages: data.totalPages || 1
+        totalPages: data.totalPages || 1,
+        limit: data.limit || PAGE_SIZE
       })
     } catch (error) {
-      console.error('Error loading listings:', error)
       showMessage('Error loading listings: ' + error.message, 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [showMessage])
+
+  useEffect(() => {
+    loadListings(query)
+  }, [query, loadListings])
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }))
   }
 
+  // A new search starts at page 1: page 4 of the previous result set says
+  // nothing about this one, and can sit past its last page.
   const handleSearch = () => {
-    loadListings()
+    setQuery({ ...filters, page: 1 })
   }
+
+  const goToPage = (page) => {
+    setQuery(prev => ({ ...prev, page }))
+  }
+
+  const reload = () => loadListings(query)
 
   const handleBuy = async (propertyId) => {
     if (!confirm('Confirm the purchase of this property?')) return
@@ -67,7 +81,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
         `Property purchased! Price: ${result.price.toLocaleString('fr-BE')} € • Fees: ${result.fees.toLocaleString('fr-BE')} € • Total: ${result.totalCost.toLocaleString('fr-BE')} €`,
         'success'
       )
-      await loadListings()
+      await reload()
       if (onPurchase) onPurchase()
     } catch (error) {
       showMessage('Error: ' + error.message, 'error')
@@ -80,7 +94,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
     try {
       await api.deleteProperty(propertyId)
       showMessage('Property deleted successfully', 'success')
-      await loadListings()
+      await reload()
     } catch (error) {
       showMessage('Error: ' + error.message, 'error')
     }
@@ -119,7 +133,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
       await api.createProperty(propertyData)
       showMessage('Property created successfully!', 'success')
       setShowCreateForm(false)
-      await loadListings()
+      await reload()
     } catch (error) {
       showMessage('Error: ' + error.message, 'error')
     }
@@ -130,9 +144,10 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
       <div className="filters">
         <div className="filters-grid">
           <div className="filter-group">
-            <label>Zone</label>
-            <select 
-              value={filters.zone} 
+            <label htmlFor="filter-zone">Zone</label>
+            <select
+              id="filter-zone"
+              value={filters.zone}
               onChange={(e) => handleFilterChange('zone', e.target.value)}
             >
               <option value="">All zones</option>
@@ -152,9 +167,10 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
           </div>
 
           <div className="filter-group">
-            <label>Type</label>
-            <select 
-              value={filters.type} 
+            <label htmlFor="filter-type">Type</label>
+            <select
+              id="filter-type"
+              value={filters.type}
               onChange={(e) => handleFilterChange('type', e.target.value)}
             >
               <option value="">All types</option>
@@ -164,9 +180,10 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
           </div>
 
           <div className="filter-group">
-            <label>Min price (€)</label>
-            <input 
-              type="number" 
+            <label htmlFor="filter-min-price">Min price (€)</label>
+            <input
+              id="filter-min-price"
+              type="number"
               value={filters.minPrice}
               onChange={(e) => handleFilterChange('minPrice', e.target.value)}
               placeholder="0"
@@ -174,9 +191,10 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
           </div>
 
           <div className="filter-group">
-            <label>Max price (€)</label>
-            <input 
-              type="number" 
+            <label htmlFor="filter-max-price">Max price (€)</label>
+            <input
+              id="filter-max-price"
+              type="number"
               value={filters.maxPrice}
               onChange={(e) => handleFilterChange('maxPrice', e.target.value)}
               placeholder="Unlimited"
@@ -297,7 +315,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
       ) : (
         <>
           <div className="pagination-info">
-            Showing {listings.length} of {pagination.total} properties | Page {pagination.page} / {pagination.totalPages}
+            Showing {listings.length} of {results.total} properties | Page {query.page} / {results.totalPages}
           </div>
           <div className="properties-grid">
             {listings.map(property => (
@@ -374,25 +392,19 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
               </div>
             ))}
           </div>
-          {pagination.totalPages > 1 && (
+          {results.totalPages > 1 && (
             <div className="pagination-controls">
               <button
                 className="btn btn-secondary"
-                disabled={pagination.page <= 1}
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: prev.page - 1 }))
-                  setTimeout(loadListings, 100)
-                }}
+                disabled={query.page <= 1}
+                onClick={() => goToPage(query.page - 1)}
               >
                 ← Previous
               </button>
               <button
                 className="btn btn-secondary"
-                disabled={pagination.page >= pagination.totalPages}
-                onClick={() => {
-                  setPagination(prev => ({ ...prev, page: prev.page + 1 }))
-                  setTimeout(loadListings, 100)
-                }}
+                disabled={query.page >= results.totalPages}
+                onClick={() => goToPage(query.page + 1)}
               >
                 Next →
               </button>
