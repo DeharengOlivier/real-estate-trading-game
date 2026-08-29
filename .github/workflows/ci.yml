@@ -100,19 +100,23 @@ jobs:
   images:
     name: Images build and the stack comes up
     runs-on: ubuntu-latest
+    # Every compose command needs it, teardown included: the file interpolates
+    # ${SECRET_KEY:?}, so `docker compose down` fails without it too.
+    env:
+      SECRET_KEY: ci-only-signing-key-not-used-outside-this-run-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v5
       - name: Refuse to start without a signing key
+        env:
+          # Blank counts as missing for ${VAR:?}, which is what this checks.
+          SECRET_KEY: ""
         run: |
-          # The compose file uses ${SECRET_KEY:?}, so this must fail.
           if docker compose config >/dev/null 2>&1; then
             echo "compose accepted a missing SECRET_KEY" >&2
             exit 1
           fi
           echo "compose refused a missing SECRET_KEY, as intended"
       - name: Start the stack
-        env:
-          SECRET_KEY: ci-only-signing-key-not-used-outside-this-run-${{ github.run_id }}-${{ github.run_attempt }}
         run: docker compose up --build --detach --wait --wait-timeout 300
       - uses: actions/setup-python@v6
         with:
