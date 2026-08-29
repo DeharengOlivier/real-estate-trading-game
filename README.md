@@ -92,206 +92,210 @@ docker-compose ps
 3. Fill in username, email, name, password
 4. You are logged in automatically with 1,000,000 in cash
 
+## Roles and the demo account
+
+There are two roles. A **player** trades with their own money. An
+**administrator** also creates and deletes properties, edits the renovation
+catalogue, reads every trade, and advances the simulated clock for everybody.
+
+Registration through the interface always creates a player. The seed inserts
+one administrator so that the project is usable straight after a clone:
+
+| username | password | roles |
+|---|---|---|
+| `demo` | `demo123` | player, admin |
+
+Those credentials are published, deliberately, and the account exists only in a
+freshly seeded local database. Do not seed a deployment that anyone else can
+reach.
+
+Every admin route is behind a server-side dependency that answers 403 to a
+player and 401 to a request with no credential. The interface hides the
+controls a player cannot use, which is presentation only: hiding a button
+changes nothing about what the API accepts. See
+`docs/adr/0002-authorization-is-server-side-only.md`.
+
 ## Structure
 
 ```
 api/
   routers/          7 routers (auth, portfolio, trading, game, charts, admin, health)
-  tests/            Pytest suite (76 tests, all green, no external services)
-  models.py         Pydantic schemas
-  services.py       Business logic (price calculation)
-  database.py       MongoDB + Redis
-  auth.py           JWT + rate limiting
+  tests/            23 files, 244 tests, no external services
+  models.py         Pydantic schemas, validated at the boundary
+  services.py       Pricing model
+  auth.py           JWT, roles, rate limiting
+  database.py       MongoDB + Redis, and the unique indexes
+  clock.py          One source of "now", timezone aware
+  cors.py           Allowed origins, parsed from the environment
+  identifiers.py    Object ids parsed at the boundary, 400 rather than 500
+  observability.py  Request ids, structured logging, security events
 
-seed/
-  seed_realestate.py    Generates 300 properties + indices
+simulation/         Economic constants, imported by both the API and the seed
+seed/               Generates 300 properties, market indices and the demo account
+scripts/smoke.py    Guard checks against a running stack, run by CI
 
 ui/src/
   components/       Login, Market, Portfolio
-  api.js            Fetch client
+  api.js            Fetch client with timeouts on every call
 
 infra/              Dockerfiles (api, ui, seed)
-docs/               Technical documentation
+docs/adr/           Architecture decision records
+.github/workflows/  CI and CodeQL
 ```
 
 ## MongoDB Collections
 
-1. **users** - User accounts
-2. **portfolios** - Cash per user
+1. **users** - accounts and roles (unique index on username and on email)
+2. **portfolios** - cash per user (unique index on userId)
 3. **properties** - 300+ properties (zone, type, surface, characteristics)
-4. **listings** - Market availability
-5. **holdings** - Owned properties
-6. **trades** - Transaction history
-7. **marketindex** - Economic indices per quarter/zone
-8. **pricehistory** - Price evolution
-9. **renovations** - Renovation catalog
+4. **listings** - market availability (unique index on propertyId)
+5. **holdings** - owned properties (unique index on portfolioId + propertyId)
+6. **trades** - transaction history
+7. **marketindex** - economic indices per quarter (unique index on t)
+8. **pricehistory** - price evolution
+9. **renovations** - renovation catalogue
+
+The unique indexes are the integrity layer. An application-level "does it
+already exist?" check is advisory: two concurrent requests both pass it. The
+indexes are created at startup by `ensure_indexes`, and a violation surfaces as
+a 409, not a duplicate row.
 
 ## Useful Commands
 
 ```bash
-# Start
-docker-compose up --build -d
+# Start (SECRET_KEY must be set, see Configuration)
+docker compose up --build -d
 
 # Live logs
-docker-compose logs -f api
-docker-compose logs -f ui
+docker compose logs -f api
+docker compose logs -f ui
 
-# Container status
-docker-compose ps
+# API tests, in the container
+docker compose exec api pytest
 
-# Tests
-docker exec realestate-api pytest api/tests/ -v
+# Frontend lint, tests and build
+cd ui && npm ci && npm run lint && npm test && npm run build
 
-# Stop
-docker-compose down
+# Guard checks against the running stack
+python -m scripts.smoke
 
-# Full reset (deletes data)
-docker-compose down -v
+# Stop, and stop with the data
+docker compose down
+docker compose down -v
 ```
 
 ## Environment Variables
 
-Configured in `docker-compose.yml`:
-- MONGODB_URL=mongodb://mongo:27017
-- REDIS_URL=redis://redis:6379
-- SECRET_KEY=dev-secret-key-change-in-production
-- VITE_API_URL=http://localhost:8000
+| Variable | Default | Meaning |
+|---|---|---|
+| `SECRET_KEY` | **none, required** | JWT signing key. At least 32 characters. The API refuses to import without it, and refuses the placeholder keys published in this repository. |
+| `MONGODB_URL` | `mongodb://mongo:27017` | Database server. |
+| `MONGODB_DB` | `realestate` | Database name. |
+| `REDIS_URL` | `redis://redis:6379` | Rate-limiter store. Without it the limiter falls back to a per-process counter, which protects a single replica only. |
+| `CORS_ALLOWED_ORIGINS` | the local frontend | Comma-separated browser origins allowed to call the API. A wildcard is refused: this API answers with credentials, and browsers do not send credentials to a wildcard origin. |
+| `VITE_API_URL` | `http://localhost:8000` | API base URL baked into the frontend build. |
 
-See `.env.example` for the full list of variables. Never commit a real `.env`.
+`.env.example` is the full list. Never commit a real `.env`.
+
+## Tests
+
+### API
+
+The suite runs entirely in memory: no MongoDB, no Redis. `mongomock-motor`
+stands in for MongoDB and `fakeredis` for Redis, wired through fixtures in
+`api/tests/conftest.py`. 244 tests, about 45 seconds, on a bare virtual
+environment.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -r api/requirements.txt -r api/requirements-dev.txt
+pytest
+```
+
+CI runs it on Python 3.11, 3.12 and 3.13.
+
+What that substitution costs, and what is checked against the real stack
+instead, is written down in
+`docs/adr/0003-tests-run-without-external-services.md`.
+
+### Frontend
+
+```bash
+cd ui
+npm ci
+npm run lint      # ESLint with react-hooks and jsx-a11y
+npm test          # vitest + testing-library
+```
+
+### What is covered
+
+- **Authorization** - every admin route with no token, with a player's token
+  and with an admin's token; the ownership check on renovating and selling
+  somebody else's holding; the 401-versus-403 distinction.
+- **Concurrency** - two buyers racing for the same listing, driven into the
+  same instant through a rendezvous: one wins, one is refused, the balance is
+  debited once, exactly one buy trade exists.
+- **Auth** - registration, weak passwords, duplicates (409 from the index, not
+  from a check), login, `/auth/me`, JWT validation, rate limiting on both the
+  Redis and the in-memory paths, and the refusal to start without a key.
+- **Trading** - filters, pagination, sorting, buy and sell including the
+  refusals, fees and P&L.
+- **Portfolio** - summary, equity, unrealized P&L, per-holding cost basis, and
+  a query budget so an N+1 cannot come back unnoticed.
+- **Game** - renovation catalogue, starting a renovation, advancing quarters,
+  the cost of advancing.
+- **Boundaries** - malformed object ids, timezone handling, CORS parsing,
+  request-id sanitising, database constraints.
+
+## Operations
+
+- **CI** (`.github/workflows/ci.yml`) runs ruff, ruff format, mypy, the API
+  suite on three interpreters, `pip-audit` and `npm audit`, the frontend lint,
+  tests and build, and finally brings the compose stack up and runs
+  `scripts/smoke.py` against it. It also asserts that the stack refuses to
+  start with no `SECRET_KEY`.
+- **CodeQL** (`.github/workflows/codeql.yml`) scans the Python and JavaScript
+  trees with the `security-extended` query set.
+- **Logs** are structured and carry a request id, propagated from
+  `X-Request-ID` when the caller sends a safe one. Refused authorizations,
+  failed logins and rate-limit hits are logged as security events.
+- **Vulnerability reports**: see `SECURITY.md`.
+
+## Interface
+
+Built for a 375px screen first; the desktop layout is added by `min-width`
+queries. Every interactive element is at least 44px on its smallest side, no
+affordance is hover-only, and neither the page nor any nested container scrolls
+horizontally at 375px. Measured with the Chrome DevTools Protocol at a true
+375px layout viewport, and again at 1440px.
+
+The portfolio view, and with it the charting library, is loaded on demand: the
+entry bundle is 162 kB rather than 545 kB, so the first screen does not pay for
+a library it never calls.
+
+## Known limits
+
+An honest list of what is still true.
+
+- **A purchase is four writes, not one transaction.** Each scarce claim is
+  atomic on its own and a failure compensates, but a process killed mid-purchase
+  can leave a holding nobody was charged for. The reasoning, and what would
+  change it, is in
+  `docs/adr/0001-conditional-writes-instead-of-transactions.md`.
+- **Tokens live 24 hours with no rotation and no revocation list.** Logging out
+  drops the token in the browser; it stays valid until it expires.
+- **Rate limiting covers login only**, and its fallback is per process. A
+  deployment with more than one replica needs Redis to be present, not optional.
+- **Trade orchestration still lives in the routers.** The pricing model is in
+  `simulation/` and `services.py`; the buy and sell flows are not yet behind a
+  domain layer, so they can only be tested through HTTP.
+- **Deep pagination is page-based** and degrades on a large catalogue. Fine for
+  300 properties, wrong for 300 000.
+- **`base_ppm` on admin property creation is supplied by the client.** It should
+  be derived server-side from the zone and type table.
 
 ## Academic Project
 
 ECAM - NoSQL Databases
 Developed with AI assistance (GitHub Copilot). See `docs/AI-USAGE.md`.
-
-
-## Tests
-
-The test suite runs entirely in-memory: it needs NO MongoDB and NO Redis.
-MongoDB is replaced by `mongomock-motor` and Redis by `fakeredis`, both wired in
-through fixtures in `api/tests/conftest.py`. You can run it on a bare Python
-environment with nothing else running.
-
-### Running the tests locally (no Docker, no database)
-
-```bash
-# From the repository root
-python -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
-
-# Runtime deps + the in-memory test mocks (mongomock-motor, fakeredis)
-pip install -r api/requirements.txt -r api/requirements-dev.txt
-
-# Run the whole suite
-pytest
-```
-
-> Tip: the pinned dependencies build cleanly on Python 3.11. If you are on a
-> newer interpreter and `pydantic-core` fails to build, use a 3.11 venv.
-
-### Running the tests in Docker (against the real stack)
-
-```bash
-docker compose exec api pytest
-```
-
-### What is covered
-
-- **Auth** - registration (happy path, weak password, duplicate), login,
-  `/auth/me`, JWT validation, and rate limiting (both the Redis and the
-  in-memory fallback paths).
-- **Trading** - listings filters (zone, type, price range), pagination and
-  sorting, buy (success, insufficient funds, unavailable), sell (success,
-  not-owned, blocked by ongoing renovation), P&L and fee accounting.
-- **Portfolio** - summary, equity, total value, unrealized P&L, and per-holding
-  cost basis (buy price + fees + renovation costs).
-- **Game** - renovation catalog, starting a renovation, advancing a quarter
-  (completing renovations, recomputing prices), current quarter.
-- **Admin** - full CRUD for properties and renovations, plus auth guards.
-- **Charts** - portfolio equity time series and property price history.
-- **Services** - pure unit tests for the pricing model, quarter math,
-  renovation deltas, and the password/JWT helpers.
-
-## Limitations and how I would improve this
-
-This project was built as an academic exercise. The points below are an honest,
-technical assessment of what I would harden or rework before treating it as
-production-grade.
-
-### Testing
-- The suite is green (76 tests) and runs with no external services, so it is
-  safe to gate CI on it. The previously failing cases were fixed: stale route
-  paths in the tests (`/buy` -> `/trading/buy`), a wrong expected health status,
-  and a genuine bug in the Redis rate limiter (sorted-set members keyed by
-  whole-second timestamps collided, so fast bursts were never throttled).
-- Remaining gaps worth covering next: advancing many quarters in a row,
-  concurrent buys of the same listing, and zero/negative price edge cases.
-- I would add `pytest --cov` to measure coverage and gate CI on a threshold.
-
-### Concurrency and data integrity
-- Buy and sell use MongoDB multi-document transactions, but they silently fall
-  back to non-transactional writes when the server is a standalone node (no
-  replica set). On a single-node Docker MongoDB the atomic path is therefore not
-  active, so a crash mid-trade can leave cash, holdings, listings, and trades
-  out of sync. I would run MongoDB as a single-node replica set so transactions
-  are always available, and make the non-transactional fallback fail loudly
-  rather than degrade quietly.
-- There is no optimistic concurrency control on listings. Two users buying the
-  same property at the same time can both pass the availability check. I would
-  use a conditional update (for example `find_one_and_update` matching
-  `isAvailable: true`) so that exactly one buyer wins, and reject the loser.
-
-### Input validation and error handling
-- Validation relies on Pydantic at the edges, but several handlers assume a
-  document exists after a lookup and would raise on `None` instead of returning
-  a clean 404. I would add explicit existence checks and consistent error
-  envelopes across all routers.
-- The admin create-property endpoint trusts a `base_ppm` value computed on the
-  client. I would derive it server-side from the zone/type table so the client
-  cannot inject arbitrary economics.
-
-### Performance: indexing and pagination
-- The MongoDB collections have no explicit indexes. Listing queries filter and
-  sort on `zone`, `type`, `price`, and `surface`, and lookups hit `propertyId`,
-  `userId`, `portfolioId`, and the quarter `t`. I would add compound indexes on
-  the hot query paths and confirm them with `explain()`.
-- Pagination is page/limit based, which is fine here but degrades on deep pages.
-  For large catalogs I would move to range/cursor-based pagination.
-- The portfolio summary issues per-holding price lookups in a loop (an N+1
-  pattern). I would batch these with a single aggregation.
-
-### Security and auth hardening
-- `SECRET_KEY` defaults to a placeholder in code and is set to a known dev value
-  in `docker-compose.yml`. In production it must come only from the environment,
-  with the app refusing to start if it is missing or left at the default.
-- Tokens are long-lived (24h) with no refresh/rotation and no revocation list. I
-  would add short-lived access tokens plus refresh tokens, and store nothing
-  sensitive in the JWT payload beyond the subject.
-- There is no role system: any authenticated user can call the "admin"
-  endpoints. I would add a role claim and enforce it as a dependency.
-
-### Rate limiting via Redis
-- Login rate limiting uses a Redis sorted set with a sliding window, which is
-  the right primitive, but it only protects the login endpoint. I would extend
-  it to registration and to write-heavy trading endpoints, and key it on client
-  IP in addition to username to blunt distributed attempts.
-- The in-memory fallback is per-process, so it provides no protection across
-  multiple API replicas. I would treat Redis as required in production.
-
-### Architecture
-- Business logic (P&L math, fee handling, trade orchestration) currently lives
-  inside the routers. I would extract it into a service/domain layer so routers
-  stay thin (HTTP in, HTTP out) and the logic is unit-testable without the web
-  stack. `services.py` already exists for pricing; I would grow it into the home
-  for all domain rules.
-
-### Tooling and delivery
-- No CI pipeline. I would add GitHub Actions to run linting, type checks, and
-  the test suite on every push.
-- No static analysis. I would add `ruff` (lint) and `mypy` (type checking) for
-  Python, and ESLint/Prettier for the React app, with type hints completed
-  across the backend.
-- Configuration is partly hardcoded (CORS origins, secret, ports). I would move
-  all of it to environment-based settings (for example a Pydantic
-  `BaseSettings` object) so dev/staging/prod differ only by environment.
-```
