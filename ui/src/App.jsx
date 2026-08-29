@@ -118,6 +118,11 @@ function App() {
     }
   }
 
+  // What the server will allow, so the interface does not offer what it is
+  // about to refuse. This is presentation, not protection: require_admin
+  // decides, and it decides again for every request whatever is rendered here.
+  const isAdmin = Boolean(user?.roles?.includes('admin'))
+
   const showMessage = (text, type = 'info') => {
     setMessage({ text, type })
     setTimeout(() => setMessage(null), 5000)
@@ -156,24 +161,29 @@ function App() {
               Log out
             </button>
           </div>
-          <div className="quarter-advance-controls">
-            <input 
-              type="number" 
-              min="1" 
-              max="100" 
-              value={quartersToAdvance}
-              onChange={(e) => setQuartersToAdvance(e.target.value)}
-              className="quarter-input"
-              disabled={loading}
-            />
-            <button 
-              className="btn btn-primary" 
-              onClick={handleAdvanceQuarter}
-              disabled={loading}
-            >
-              {loading ? 'Computing...' : 'Advance'}
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="quarter-advance-controls">
+              <label htmlFor="quarters-to-advance">Quarters to advance</label>
+              <input
+                id="quarters-to-advance"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                max="100"
+                value={quartersToAdvance}
+                onChange={(e) => setQuartersToAdvance(e.target.value)}
+                className="quarter-input"
+                disabled={loading}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleAdvanceQuarter}
+                disabled={loading}
+              >
+                {loading ? 'Computing...' : 'Advance'}
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -223,10 +233,11 @@ function App() {
 
       <main className="main-content">
         {currentView === 'market' ? (
-          <Market 
-            key={marketRefreshKey} 
-            onPurchase={refreshData} 
-            showMessage={showMessage} 
+          <Market
+            key={marketRefreshKey}
+            onPurchase={refreshData}
+            showMessage={showMessage}
+            isAdmin={isAdmin}
           />
         ) : (
           <Portfolio 

@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
 
-function Market({ onPurchase, showMessage }) {
+// isAdmin decides what this component offers. It is not a security boundary:
+// the admin router refuses the same calls server-side whatever is rendered
+// here, and hiding the buttons only stops the interface from proposing an
+// action the API is about to answer with a 403.
+function Market({ onPurchase, showMessage, isAdmin = false }) {
   const [listings, setListings] = useState([])
   const [filters, setFilters] = useState({
     zone: '',
@@ -186,12 +190,14 @@ function Market({ onPurchase, showMessage }) {
           >
             Search
           </button>
-          <button
-            className="btn btn-success"
-            onClick={() => setShowCreateForm(true)}
-          >
-            Create a property
-          </button>
+          {isAdmin && (
+            <button
+              className="btn btn-success"
+              onClick={() => setShowCreateForm(true)}
+            >
+              Create a property
+            </button>
+          )}
         </div>
       </div>
 
@@ -329,40 +335,35 @@ function Market({ onPurchase, showMessage }) {
           <div className="properties-grid">
             {listings.map(property => (
               <div key={property.propertyId} className="property-card" style={{ position: 'relative' }}>
-                <button
-                  onClick={() => handleDelete(property.propertyId)}
-                  style={{
-                    position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    background: '#ef4444',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '28px',
-                    height: '28px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: 'bold',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                    transition: 'all 0.2s ease',
-                    zIndex: 10
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.background = '#dc2626'
-                    e.target.style.transform = 'scale(1.1)'
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.background = '#ef4444'
-                    e.target.style.transform = 'scale(1)'
-                  }}
-                  title="Delete this property"
-                >
-                  ✕
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDelete(property.propertyId)}
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      right: '8px',
+                      background: '#ef4444',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '28px',
+                      height: '28px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: 'bold',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                      transition: 'all 0.2s ease',
+                      zIndex: 10
+                    }}
+                    title="Delete this property"
+                    aria-label={`Delete the ${property.surface} m² property in ${property.zone}`}
+                  >
+                    ✕
+                  </button>
+                )}
                 <span className="property-type">
                   {property.type === 'house' ? 'House' : 'Apartment'}
                 </span>
