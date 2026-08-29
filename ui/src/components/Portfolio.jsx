@@ -202,8 +202,10 @@ function Portfolio({ onSell, showMessage }) {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2 className="modal-title">🔨 Choose a renovation</h2>
-              <button 
+              <button
+                type="button"
                 className="modal-close"
+                aria-label="Close the renovation list"
                 onClick={() => setShowRenovationModal(false)}
               >
                 ×
@@ -212,7 +214,8 @@ function Portfolio({ onSell, showMessage }) {
 
             <div className="renovation-list">
               {renovations.map(reno => (
-                <div 
+                <button
+                  type="button"
                   key={reno.code}
                   className="renovation-item"
                   onClick={() => handleRenovationSelect(reno.code)}
@@ -229,7 +232,7 @@ function Portfolio({ onSell, showMessage }) {
                     {reno.delta.bath !== 0 && `Bathroom: +${(reno.delta.bath * 100).toFixed(0)}% `}
                     {reno.delta.surfacePct !== 0 && `Floor area: +${(reno.delta.surfacePct * 100).toFixed(0)}% `}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>

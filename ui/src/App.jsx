@@ -134,7 +134,7 @@ function App() {
 
   // Show login if not authenticated
   if (!authChecked) {
-    return <div className="app" style={{display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh'}}>Loading...</div>
+    return <div className="app app-loading">Loading...</div>
   }
 
   if (!user) {
@@ -156,14 +156,15 @@ function App() {
             <button 
               className="btn btn-secondary" 
               onClick={handleLogout}
-              style={{marginLeft: '10px'}}
             >
               Log out
             </button>
           </div>
           {isAdmin && (
             <div className="quarter-advance-controls">
-              <label htmlFor="quarters-to-advance">Quarters to advance</label>
+              <label className="visually-hidden" htmlFor="quarters-to-advance">
+                Quarters to advance
+              </label>
               <input
                 id="quarters-to-advance"
                 type="number"

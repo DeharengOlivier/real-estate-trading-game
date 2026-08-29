@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 import { api } from '../api'
 
 // isAdmin decides what this component offers. It is not a security boundary:
-// the admin router refuses the same calls server-side whatever is rendered
-// here, and hiding the buttons only stops the interface from proposing an
-// action the API is about to answer with a 403.
+// the server checks the role again on every request, and would refuse these
+// calls from a player who reached them another way. It is here so the
+// interface does not present a button that is going to answer 403.
 function Market({ onPurchase, showMessage, isAdmin = false }) {
   const [listings, setListings] = useState([])
   const [filters, setFilters] = useState({
@@ -183,7 +183,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
             />
           </div>
         </div>
-        <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
+        <div className="filter-actions">
           <button 
             className="btn btn-primary" 
             onClick={handleSearch}
@@ -203,36 +203,18 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
 
       {/* Create Property Modal */}
       {showCreateForm && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            padding: '2rem',
-            borderRadius: '8px',
-            maxWidth: '500px',
-            width: '90%',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
-          }}>
-            <h3 style={{ marginTop: 0 }}>Create a new property</h3>
-            
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Zone
-              </label>
-              <select 
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Create a new property</h2>
+            </div>
+
+            <div className="modal-field">
+              <label htmlFor="new-property-zone">Zone</label>
+              <select
+                id="new-property-zone"
                 value={newProperty.zone}
                 onChange={(e) => setNewProperty({ ...newProperty, zone: e.target.value })}
-                style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
               >
                 <option value="Bruxelles-Centre">Bruxelles-Centre</option>
                 <option value="Ixelles">Ixelles</option>
@@ -249,66 +231,51 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
               </select>
             </div>
 
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Type
-              </label>
-              <select 
+            <div className="modal-field">
+              <label htmlFor="new-property-type">Type</label>
+              <select
+                id="new-property-type"
                 value={newProperty.type}
                 onChange={(e) => setNewProperty({ ...newProperty, type: e.target.value })}
-                style={{ width: '100%', padding: '0.5rem', fontSize: '1rem' }}
               >
                 <option value="apartment">Apartment</option>
                 <option value="house">House</option>
               </select>
             </div>
 
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+            <div className="modal-field">
+              <label htmlFor="new-property-surface">
                 Floor area: {newProperty.surface} m²
               </label>
-              <input 
+              <input
+                id="new-property-surface"
                 type="range"
                 min="50"
                 max="400"
                 step="10"
                 value={newProperty.surface}
                 onChange={(e) => setNewProperty({ ...newProperty, surface: e.target.value })}
-                style={{ width: '100%' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#666' }}>
+              <div className="modal-field-hint">
                 <span>50 m²</span>
                 <span>400 m²</span>
               </div>
             </div>
 
-            <div style={{ 
-              padding: '1rem', 
-              backgroundColor: '#f3f4f6', 
-              borderRadius: '4px',
-              marginBottom: '1.5rem',
-              fontSize: '0.9rem'
-            }}>
-              <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>
-                Automatic characteristics
-              </p>
-              <p style={{ margin: 0, color: '#666' }}>
+            <div className="modal-preview">
+              <p><strong>Automatic characteristics</strong></p>
+              <p>
                 The characteristics (EPC, condition, kitchen, bathroom) will be generated automatically with realistic random values.
               </p>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button 
-                className="btn btn-success"
-                onClick={handleCreate}
-                style={{ flex: 1 }}
-              >
+            <div className="modal-actions">
+              <button className="btn btn-success" onClick={handleCreate}>
                 Create
               </button>
               <button
                 className="btn btn-secondary"
                 onClick={() => setShowCreateForm(false)}
-                style={{ flex: 1 }}
               >
                 Cancel
               </button>
@@ -329,35 +296,16 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
         </div>
       ) : (
         <>
-          <div className="pagination-info" style={{ marginBottom: '1rem', textAlign: 'center' }}>
+          <div className="pagination-info">
             Showing {listings.length} of {pagination.total} properties | Page {pagination.page} / {pagination.totalPages}
           </div>
           <div className="properties-grid">
             {listings.map(property => (
-              <div key={property.propertyId} className="property-card" style={{ position: 'relative' }}>
+              <div key={property.propertyId} className="property-card">
                 {isAdmin && (
                   <button
+                    className="property-delete"
                     onClick={() => handleDelete(property.propertyId)}
-                    style={{
-                      position: 'absolute',
-                      top: '8px',
-                      right: '8px',
-                      background: '#ef4444',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '50%',
-                      width: '28px',
-                      height: '28px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 'bold',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                      transition: 'all 0.2s ease',
-                      zIndex: 10
-                    }}
                     title="Delete this property"
                     aria-label={`Delete the ${property.surface} m² property in ${property.zone}`}
                   >
@@ -380,7 +328,7 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
                   )}
                 </div>
                 
-                <div className="property-details" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.9rem' }}>
+                <div className="property-details">
                   <div>{property.surface.toFixed(0)} m²</div>
                   <div>Quality: {property.qualityScore}%</div>
                   <div>EPC: {property.epcScore}%</div>
@@ -415,11 +363,10 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
                   </div>
                 </div>
 
-                <div className="property-actions" style={{ marginTop: '0.75rem' }}>
+                <div className="property-actions">
                   <button 
                     className="btn btn-success"
                     onClick={() => handleBuy(property.propertyId)}
-                    style={{ width: '100%' }}
                   >
                     Buy (+ {(property.price * 0.025).toLocaleString('fr-BE')} € fees)
                   </button>
@@ -428,18 +375,19 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
             ))}
           </div>
           {pagination.totalPages > 1 && (
-            <div className="pagination-controls" style={{ marginTop: '1rem', textAlign: 'center' }}>
-              <button 
+            <div className="pagination-controls">
+              <button
+                className="btn btn-secondary"
                 disabled={pagination.page <= 1}
                 onClick={() => {
                   setPagination(prev => ({ ...prev, page: prev.page - 1 }))
                   setTimeout(loadListings, 100)
                 }}
-                style={{ marginRight: '0.5rem' }}
               >
                 ← Previous
               </button>
-              <button 
+              <button
+                className="btn btn-secondary"
                 disabled={pagination.page >= pagination.totalPages}
                 onClick={() => {
                   setPagination(prev => ({ ...prev, page: prev.page + 1 }))

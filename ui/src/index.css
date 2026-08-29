@@ -14,8 +14,13 @@ body {
   color: #333;
 }
 
+/*
+ * `dvh` follows the mobile URL bar as it collapses, `vh` does not. The `vh`
+ * line stays first as the fallback for browsers that do not know `dvh`.
+ */
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button {
@@ -25,4 +30,13 @@ button {
 
 input, select {
   font-family: inherit;
+}
+
+/*
+ * Wide content scrolls inside its own container. The page body never does: a
+ * horizontally scrolling document at 375px is a layout bug, and hiding it here
+ * would only make it harder to find.
+ */
+img, svg, video, canvas, table {
+  max-width: 100%;
 }

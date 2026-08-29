@@ -138,9 +138,8 @@ function Login({ onLogin }) {
         </form>
 
         <div className="toggle-mode">
-          {isRegister ? 'Already have an account?' : "Don't have an account?"}
-          {' '}
-          <button onClick={toggleMode} className="link-btn">
+          <p>{isRegister ? 'Already have an account?' : "Don't have an account?"}</p>
+          <button type="button" onClick={toggleMode} className="link-btn">
             {isRegister ? 'Sign in' : 'Sign up'}
           </button>
         </div>
