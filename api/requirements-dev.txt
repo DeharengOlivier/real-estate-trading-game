@@ -15,3 +15,6 @@ fakeredis==2.36.2
 # Static analysis. Configured in pyproject.toml; both are gates in CI.
 ruff==0.16.5
 mypy==1.19.0
+
+# Dependency advisories, run as a gate in CI against the installed set.
+pip-audit==2.9.0

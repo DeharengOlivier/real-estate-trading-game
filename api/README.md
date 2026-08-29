@@ -258,7 +258,7 @@ Listed in `requirements.txt`:
 - motor - Async MongoDB driver
 - pymongo - Sync MongoDB (for seed)
 - redis - Async Redis client
-- python-jose - JWT tokens
+- PyJWT - JWT tokens
 - passlib - bcrypt hashing
 - pydantic - Validation
 - python-multipart - File upload

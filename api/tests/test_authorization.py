@@ -13,9 +13,9 @@ The battery covers three separate ways a caller can be wrong:
 
 from datetime import datetime, timedelta
 
+import jwt
 import pytest
 from bson import ObjectId
-from jose import jwt
 
 from api.auth import ALGORITHM, SECRET_KEY, create_access_token
 from api.database import get_database
@@ -266,7 +266,13 @@ async def test_a_player_cannot_grant_themselves_a_role_at_registration():
 async def test_a_token_signed_with_another_key_is_refused(test_user_and_token):
     """A forged signature is an authentication failure, not an admin."""
     user_data, _, _ = test_user_and_token
-    forged = jwt.encode({"sub": str(user_data["user_id"])}, "not-the-real-key", algorithm=ALGORITHM)
+    # As long as the real key: an attacker forging a token would use a
+    # plausible one, and a short key only makes PyJWT warn about the test.
+    forged = jwt.encode(
+        {"sub": str(user_data["user_id"])},
+        "not-the-real-key-but-just-as-long-as-one",
+        algorithm=ALGORITHM,
+    )
 
     async with api_client() as client:
         response = await client.get("/admin/trades", headers={"Authorization": f"Bearer {forged}"})

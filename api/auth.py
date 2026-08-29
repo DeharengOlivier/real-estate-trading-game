@@ -7,10 +7,10 @@ import os
 from datetime import datetime, timedelta
 
 import bcrypt
+import jwt
 from bson import ObjectId
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 
 from api.database import get_database
 
@@ -133,10 +133,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     try:
         token = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
+        # A token can carry any JSON in "sub", or none at all, so it is not a
+        # str until it has been checked.
+        subject = payload.get("sub")
+        if not isinstance(subject, str):
             raise credentials_exception
-    except JWTError:
+        user_id: str = subject
+    except jwt.PyJWTError:
         # `from None`: a caller with a bad token learns their token is bad, and
         # nothing about why the library rejected it.
         raise credentials_exception from None

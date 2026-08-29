@@ -19,5 +19,9 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
 email-validator==2.3.0
-python-jose[cryptography]==3.5.0
+# PyJWT rather than python-jose. python-jose pulls in `ecdsa`, which carries
+# an advisory its maintainers have said will not be fixed (the pure-Python
+# implementation is open to timing attacks), and it arrives here for a curve
+# this project never uses: tokens are signed with HS256, which is HMAC.
+PyJWT==2.13.0
 bcrypt==5.0.0

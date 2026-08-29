@@ -5,9 +5,9 @@ These exercise the pricing/quarter math and password/JWT helpers directly,
 without going through the HTTP layer.
 """
 
+import jwt
 import pytest
 from bson import ObjectId
-from jose import jwt
 
 from api import services
 from api.auth import ALGORITHM, SECRET_KEY, create_access_token, get_password_hash, verify_password

@@ -9,9 +9,9 @@ have. Ids are parsed at the boundary instead, so past the boundary an id is an
 id.
 """
 
+import jwt
 import pytest
 from bson import ObjectId
-from jose import jwt
 
 from api.auth import ALGORITHM, SECRET_KEY
 from api.tests.conftest import api_client
@@ -111,3 +111,21 @@ async def test_a_well_formed_but_unknown_id_is_still_a_clean_404(
         )
 
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("subject", [12345, None, {"id": "x"}, ["a"], True])
+async def test_a_token_subject_that_is_not_a_string_is_refused(subject):
+    """A JWT payload is arbitrary JSON, so "sub" is not a string until checked.
+
+    ``ObjectId.is_valid`` accepts some non-string inputs and ``ObjectId(...)``
+    accepts others, so a token carrying a number or an object under "sub" could
+    travel further than a malformed string does. It is a bad credential like
+    any other: 401.
+    """
+    token = jwt.encode({"sub": subject}, SECRET_KEY, algorithm=ALGORITHM)
+
+    async with api_client() as client:
+        response = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 401
