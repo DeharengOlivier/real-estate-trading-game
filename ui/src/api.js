@@ -1,250 +1,135 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-// Get token from localStorage
-const getToken = () => localStorage.getItem('token');
+// Every call is bounded. A fetch with no timeout waits as long as the network
+// lets it, which on a phone that has just lost signal is minutes of a spinner
+// with no way back. Advancing a quarter recomputes every price, so it gets
+// longer than the rest rather than no limit at all.
+const DEFAULT_TIMEOUT_MS = 10000
+const SLOW_TIMEOUT_MS = 60000
 
-// Set token in localStorage
-export const setToken = (token) => localStorage.setItem('token', token);
+const getToken = () => localStorage.getItem('token')
+export const setToken = (token) => localStorage.setItem('token', token)
+export const removeToken = () => localStorage.removeItem('token')
 
-// Remove token from localStorage
-export const removeToken = () => localStorage.removeItem('token');
+const authHeaders = () => {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
-// Create headers with authentication
-const getHeaders = () => {
-  const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+/**
+ * One request, bounded in time, with one way of reporting failure.
+ *
+ * Written once rather than seventeen times: before this, each call spelled out
+ * its own error handling and none of them had a timeout.
+ */
+async function request(path, { method = 'GET', body, auth = false, timeout = DEFAULT_TIMEOUT_MS, onFailure } = {}) {
+  const controller = new AbortController()
+  const expired = setTimeout(() => controller.abort(), timeout)
+
+  let response
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(auth ? authHeaders() : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`The server did not answer within ${Math.round(timeout / 1000)} seconds. Check your connection and try again.`)
+    }
+    throw new Error('Could not reach the server. Check your connection and try again.')
+  } finally {
+    clearTimeout(expired)
   }
-  return headers;
-};
+
+  if (response.ok) {
+    return response.status === 204 ? null : response.json()
+  }
+
+  // 401 means the token is gone or no longer valid: drop it, so the next
+  // render asks for a login rather than retrying with a credential that has
+  // already been refused.
+  if (response.status === 401) {
+    removeToken()
+    throw new Error('Session expired')
+  }
+
+  throw new Error(await failureMessage(response, onFailure))
+}
+
+async function failureMessage(response, fallback) {
+  try {
+    const problem = await response.json()
+    if (typeof problem.detail === 'string') return problem.detail
+    // FastAPI reports validation errors as a list of field problems.
+    if (Array.isArray(problem.detail)) {
+      return problem.detail.map((item) => item.msg).join('. ')
+    }
+  } catch {
+    // Not JSON. Fall through to the caller's wording.
+  }
+  return fallback || `Request failed (${response.status})`
+}
 
 export const api = {
-  // Authentication
   register: async (userData) => {
-    const res = await fetch(`${API_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(userData)
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Registration failed');
-    }
-    
-    const data = await res.json();
-    setToken(data.access_token);
-    return data;
+    const data = await request('/auth/register', { method: 'POST', body: userData, onFailure: 'Registration failed' })
+    setToken(data.access_token)
+    return data
   },
 
   login: async (credentials) => {
-    const res = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials)
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Login failed');
+    const data = await request('/auth/login', { method: 'POST', body: credentials, onFailure: 'Login failed' })
+    setToken(data.access_token)
+    return data
+  },
+
+  getMe: () => request('/auth/me', { auth: true }),
+
+  logout: () => removeToken(),
+
+  health: () => request('/health'),
+
+  getCurrentQuarter: () => request('/game/current-quarter'),
+
+  getListings: (filters = {}) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== null && value !== '') params.append(key, value)
     }
-    
-    const data = await res.json();
-    setToken(data.access_token);
-    return data;
+    return request(`/trading/listings?${params}`)
   },
 
-  getMe: async () => {
-    const res = await fetch(`${API_URL}/auth/me`, {
-      headers: getHeaders()
-    });
-    
-    if (!res.ok) {
-      if (res.status === 401) {
-        removeToken();
-        throw new Error('Session expired');
-      }
-      throw new Error('Failed to get user info');
-    }
-    
-    return res.json();
-  },
+  getPortfolioSummary: () => request('/portfolio/summary', { auth: true }),
 
-  logout: () => {
-    removeToken();
-  },
+  getHoldings: () => request('/portfolio/holdings', { auth: true }),
 
-  // Health
-  health: async () => {
-    const res = await fetch(`${API_URL}/health`);
-    return res.json();
-  },
+  buyProperty: (propertyId) =>
+    request('/trading/buy', { method: 'POST', body: { propertyId }, auth: true, onFailure: 'Purchase failed' }),
 
-  // Current quarter
-  getCurrentQuarter: async () => {
-    const res = await fetch(`${API_URL}/game/current-quarter`);
-    return res.json();
-  },
+  sellProperty: (propertyId) =>
+    request('/trading/sell', { method: 'POST', body: { propertyId }, auth: true, onFailure: 'Sale failed' }),
 
-  // Listings
-  getListings: async (filters = {}) => {
-    const params = new URLSearchParams();
-    if (filters.zone) params.append('zone', filters.zone);
-    if (filters.type) params.append('type', filters.type);
-    if (filters.minPrice) params.append('minPrice', filters.minPrice);
-    if (filters.maxPrice) params.append('maxPrice', filters.maxPrice);
-    if (filters.page) params.append('page', filters.page);
-    if (filters.limit) params.append('limit', filters.limit);
-    
-    const res = await fetch(`${API_URL}/trading/listings?${params}`);
-    const data = await res.json();
-    return data;
-  },
+  getRenovations: () => request('/game/renovations'),
 
-  // Portfolio
-  getPortfolioSummary: async () => {
-    const res = await fetch(`${API_URL}/portfolio/summary`, {
-      headers: getHeaders()
-    });
-    
-    if (!res.ok) {
-      if (res.status === 401) {
-        removeToken();
-        throw new Error('Session expired');
-      }
-      throw new Error('Failed to get portfolio summary');
-    }
-    
-    return res.json();
-  },
+  startRenovation: (holdingId, renoCode) =>
+    request('/game/renovate', { method: 'POST', body: { holdingId, renoCode }, auth: true, onFailure: 'Renovation failed' }),
 
-  getHoldings: async () => {
-    const res = await fetch(`${API_URL}/portfolio/holdings`, {
-      headers: getHeaders()
-    });
-    
-    if (!res.ok) {
-      if (res.status === 401) {
-        removeToken();
-        throw new Error('Session expired');
-      }
-      throw new Error('Failed to get holdings');
-    }
-    
-    return res.json();
-  },
+  // Recomputes the price of every property, so it is allowed longer.
+  advanceQuarter: () =>
+    request('/game/advance-quarter', { method: 'POST', auth: true, timeout: SLOW_TIMEOUT_MS, onFailure: 'Failed to advance quarter' }),
 
-  // Buy/Sell
-  buyProperty: async (propertyId) => {
-    const res = await fetch(`${API_URL}/trading/buy`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ propertyId })
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Purchase failed');
-    }
-    
-    return res.json();
-  },
+  getPortfolioEquityChart: () => request('/charts/portfolio-equity', { auth: true }),
 
-  sellProperty: async (propertyId) => {
-    const res = await fetch(`${API_URL}/trading/sell`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ propertyId })
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Sale failed');
-    }
-    
-    return res.json();
-  },
+  getPropertyPriceChart: (propertyId) => request(`/charts/property/${propertyId}`, { auth: true }),
 
-  // Renovations
-  getRenovations: async () => {
-    const res = await fetch(`${API_URL}/game/renovations`);
-    return res.json();
-  },
+  deleteProperty: (propertyId) =>
+    request(`/admin/properties/${propertyId}`, { method: 'DELETE', auth: true, onFailure: 'Deletion failed' }),
 
-  startRenovation: async (holdingId, renoCode) => {
-    const res = await fetch(`${API_URL}/game/renovate`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ holdingId, renoCode })
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Renovation failed');
-    }
-    
-    return res.json();
-  },
-
-  // Time
-  advanceQuarter: async () => {
-    const res = await fetch(`${API_URL}/game/advance-quarter`, {
-      method: 'POST',
-      headers: getHeaders()
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Failed to advance quarter');
-    }
-    
-    return res.json();
-  },
-
-  // Charts
-  getPortfolioEquityChart: async () => {
-    const res = await fetch(`${API_URL}/charts/portfolio-equity`, {
-      headers: getHeaders()
-    });
-    return res.json();
-  },
-
-  getPropertyPriceChart: async (propertyId) => {
-    const res = await fetch(`${API_URL}/charts/property/${propertyId}`, {
-      headers: getHeaders()
-    });
-    return res.json();
-  },
-
-  // Admin - Delete property
-  deleteProperty: async (propertyId) => {
-    const res = await fetch(`${API_URL}/admin/properties/${propertyId}`, {
-      method: 'DELETE',
-      headers: getHeaders()
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Deletion failed');
-    }
-    
-    return res.json();
-  },
-
-  // Admin - Create property
-  createProperty: async (propertyData) => {
-    const res = await fetch(`${API_URL}/admin/properties`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify(propertyData)
-    });
-    
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.detail || 'Creation failed');
-    }
-    
-    return res.json();
-  }
-};
+  createProperty: (propertyData) =>
+    request('/admin/properties', { method: 'POST', body: propertyData, auth: true, onFailure: 'Creation failed' }),
+}
