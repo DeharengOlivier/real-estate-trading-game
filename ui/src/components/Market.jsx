@@ -52,7 +52,12 @@ function Market({ onPurchase, showMessage, isAdmin = false }) {
     }
   }, [showMessage])
 
+  // The fetch-on-mount that set-state-in-effect warns about. The rule exists to
+  // stop a synchronous setState from cascading renders; here the state is set
+  // after an awaited request, and the project carries no data-fetching library
+  // that would own this instead.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadListings(query)
   }, [query, loadListings])
 

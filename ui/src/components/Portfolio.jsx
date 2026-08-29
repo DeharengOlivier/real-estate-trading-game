@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
@@ -10,11 +10,7 @@ function Portfolio({ onSell, showMessage }) {
   const [showRenovationModal, setShowRenovationModal] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
       const [holdingsData, equityChartData, renosData] = await Promise.all([
@@ -22,17 +18,25 @@ function Portfolio({ onSell, showMessage }) {
         api.getPortfolioEquityChart(),
         api.getRenovations()
       ])
-      
+
       setHoldings(holdingsData)
       setEquityData(equityChartData)
       setRenovations(renosData)
     } catch (error) {
-      console.error('Error loading portfolio:', error)
       showMessage('Error loading portfolio: ' + error.message, 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [showMessage])
+
+  // The fetch-on-mount that set-state-in-effect warns about. The rule exists to
+  // stop a synchronous setState from cascading renders; here the state is set
+  // after an awaited request, and the project carries no data-fetching library
+  // that would own this instead.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData()
+  }, [loadData])
 
   const handleSell = async (propertyId) => {
     if (!confirm('Confirm the sale of this property?')) return
@@ -54,6 +58,22 @@ function Portfolio({ onSell, showMessage }) {
     setSelectedHolding(holding)
     setShowRenovationModal(true)
   }
+
+  const closeRenovationModal = () => {
+    setShowRenovationModal(false)
+    setSelectedHolding(null)
+  }
+
+  // Escape closes the dialog. Clicking the backdrop already does, and a
+  // keyboard user has no backdrop to click.
+  useEffect(() => {
+    if (!showRenovationModal) return
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') closeRenovationModal()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [showRenovationModal])
 
   const handleRenovationSelect = async (renoCode) => {
     if (!selectedHolding) return
@@ -175,10 +195,7 @@ function Portfolio({ onSell, showMessage }) {
               <div className="holding-actions">
                 <button 
                   className="btn btn-primary"
-                  onClick={() => {
-                    setSelectedHolding(holding)
-                    setShowRenovationModal(true)
-                  }}
+                  onClick={() => handleStartRenovation(holding)}
                   disabled={holding.ongoingWorks > 0}
                 >
                   Start renovation
@@ -198,15 +215,23 @@ function Portfolio({ onSell, showMessage }) {
 
       {/* Renovation Modal */}
       {showRenovationModal && (
-        <div className="modal-overlay" onClick={() => setShowRenovationModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={(event) => {
+            // Clicking the backdrop closes; a click inside the dialog reaches
+            // this handler too, so the target has to be the backdrop itself.
+            if (event.target === event.currentTarget) closeRenovationModal()
+          }}
+        >
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Choose a renovation">
             <div className="modal-header">
               <h2 className="modal-title">🔨 Choose a renovation</h2>
               <button
                 type="button"
                 className="modal-close"
                 aria-label="Close the renovation list"
-                onClick={() => setShowRenovationModal(false)}
+                onClick={closeRenovationModal}
               >
                 ×
               </button>

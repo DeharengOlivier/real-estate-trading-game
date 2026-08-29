@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from './api'
 import './App.css'
 import Login from './components/Login'
 import Market from './components/Market'
 import Portfolio from './components/Portfolio'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -18,59 +17,41 @@ function App() {
   const [portfolioRefreshKey, setPortfolioRefreshKey] = useState(0)
   const [marketRefreshKey, setMarketRefreshKey] = useState(0)
 
-  useEffect(() => {
-    checkAuth()
+  const showMessage = useCallback((text, type = 'info') => {
+    setMessage({ text, type })
+    setTimeout(() => setMessage(null), 5000)
   }, [])
 
-  useEffect(() => {
-    if (user) {
-      loadData()
-    }
-  }, [user])
-
-  const checkAuth = async () => {
+  const checkAuth = useCallback(async () => {
     try {
       const userData = await api.getMe()
       setUser(userData)
-    } catch (error) {
-      console.log('Not authenticated')
+    } catch {
+      // No usable session. The login form is the correct next screen, and
+      // saying so in the console is noise on a first visit.
     } finally {
       setAuthChecked(true)
     }
-  }
+  }, [])
 
-  const handleLogin = async (credentials, isRegister) => {
-    try {
-      const result = isRegister 
-        ? await api.register(credentials)
-        : await api.login(credentials)
-      
-      setUser(result.user)
-      showMessage(`Welcome ${result.user.name}!`, 'success')
-    } catch (error) {
-      throw error // Re-throw to be handled by Login component
-    }
-  }
-
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     api.logout()
     setUser(null)
     setPortfolioSummary(null)
     setCurrentQuarter('')
     showMessage('Logged out successfully', 'info')
-  }
+  }, [showMessage])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [quarter, summary] = await Promise.all([
         api.getCurrentQuarter(),
         api.getPortfolioSummary()
       ])
-      
+
       setCurrentQuarter(quarter.quarter)
       setPortfolioSummary(summary)
     } catch (error) {
-      console.error('Error loading data:', error)
       if (error.message.includes('Session expired')) {
         handleLogout()
         showMessage('Session expired, please log in again', 'error')
@@ -78,6 +59,31 @@ function App() {
         showMessage('Error loading data: ' + error.message, 'error')
       }
     }
+  }, [handleLogout, showMessage])
+
+  // The fetch-on-mount that set-state-in-effect warns about. The rule exists to
+  // stop a synchronous setState from cascading renders; here the state is set
+  // after an awaited request, and the project carries no data-fetching library
+  // that would own this instead.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    checkAuth()
+  }, [checkAuth])
+
+  useEffect(() => {
+    if (user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      loadData()
+    }
+  }, [user, loadData])
+
+  const handleLogin = async (credentials, isRegister) => {
+    const result = isRegister
+      ? await api.register(credentials)
+      : await api.login(credentials)
+
+    setUser(result.user)
+    showMessage(`Welcome ${result.user.name}!`, 'success')
   }
 
   const handleAdvanceQuarter = async () => {
@@ -122,11 +128,6 @@ function App() {
   // about to refuse. This is presentation, not protection: require_admin
   // decides, and it decides again for every request whatever is rendered here.
   const isAdmin = Boolean(user?.roles?.includes('admin'))
-
-  const showMessage = (text, type = 'info') => {
-    setMessage({ text, type })
-    setTimeout(() => setMessage(null), 5000)
-  }
 
   const refreshData = () => {
     loadData()
