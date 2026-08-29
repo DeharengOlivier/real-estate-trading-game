@@ -2,21 +2,22 @@
 Charts router - Data visualization and analytics endpoints
 Single Responsibility: Provide data for charts and reports
 """
-from fastapi import APIRouter, HTTPException, Depends
-from bson import ObjectId
-from typing import Dict, List
+import logging
 from collections import defaultdict
 from datetime import datetime
-import logging
+from typing import Any
 
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException
+
+from api.auth import get_current_user
 from api.database import get_database
 from api.identifiers import parse_object_id
-from api.auth import get_current_user
 from api.services import (
-    get_current_quarter,
-    parse_quarter_string,
     add_quarters,
+    get_current_quarter,
     get_property_current_price,
+    parse_quarter_string,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,13 +40,13 @@ def quarter_to_index(t: str) -> int:
 async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_user)):
     """
     Get portfolio equity over time for charting
-    
+
     Returns time series of:
     - Total portfolio value (cash + holdings value)
     - By quarter
     """
     db = get_database()
-    
+
     # Get user's portfolio
     portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
     if not portfolio:
@@ -77,7 +78,7 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
 
     # Map trades by quarter and gather metadata
     trades_by_quarter = defaultdict(list)
-    trade_quarters: List[str] = []
+    trade_quarters: list[str] = []
     property_ids = set()
 
     for trade in trades:
@@ -94,7 +95,7 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
         property_ids.add(trade["propertyId"])
 
     # Ensure trades are ordered within each quarter
-    for quarter, quarter_trades in trades_by_quarter.items():
+    for quarter_trades in trades_by_quarter.values():
         quarter_trades.sort(key=lambda t: t.get("ts", datetime.min))
 
     # Determine starting cash by reversing trades
@@ -122,7 +123,7 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
     end_index = quarter_to_index(current_quarter)
 
     # Build ordered list of quarters to evaluate
-    quarter_sequence: List[str] = []
+    quarter_sequence: list[str] = []
     iter_quarter = start_quarter
     while quarter_to_index(iter_quarter) <= end_index:
         quarter_sequence.append(iter_quarter)
@@ -138,7 +139,7 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
         property_ids.add(holding["propertyId"])
 
     # Preload price history for all relevant properties within the time window
-    property_price_map: Dict[str, List[tuple]] = {}
+    property_price_map: dict[str, list[tuple]] = {}
     if property_ids and quarter_sequence:
         price_history = await db.pricehistory.find({
             "propertyId": {"$in": list(property_ids)},
@@ -155,10 +156,11 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
             entries.sort(key=lambda item: item[0])
 
     # Simulation state across quarters
-    holdings_state: Dict[str, Dict[str, ObjectId]] = {}
-    price_cache: Dict[tuple, float] = {}
+    holdings_state: dict[str, dict[str, ObjectId]] = {}
+    price_cache: dict[tuple, float] = {}
     cash = initial_cash
-    equity_history: List[Dict[str, float]] = []
+    # Each point carries its quarter label alongside three amounts.
+    equity_history: list[dict[str, Any]] = []
 
     for quarter in quarter_sequence:
         quarter_index = quarter_to_index(quarter)
@@ -181,27 +183,30 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
         equity_value = 0.0
         for prop_key, info in holdings_state.items():
             cache_key = (prop_key, quarter)
-            price = price_cache.get(cache_key)
+            # A distinct name from the trade price above: reusing `price` for
+            # both made the two meanings indistinguishable in this loop.
+            quarter_price = price_cache.get(cache_key)
 
-            if price is None:
-                entries = property_price_map.get(prop_key)
-                if entries:
-                    for idx, entry_price in entries:
+            if quarter_price is None:
+                known_prices = property_price_map.get(prop_key) or []
+                if known_prices:
+                    for idx, entry_price in known_prices:
                         if idx <= quarter_index:
-                            price = entry_price
+                            quarter_price = entry_price
                         else:
                             break
 
-                if price is None:
-                    price = await get_property_current_price(
+                if quarter_price is None:
+                    quarter_price = await get_property_current_price(
                         db,
                         info["property_id"],
                         quarter
                     )
 
-                price_cache[cache_key] = float(price or 0.0)
+                quarter_price = float(quarter_price or 0.0)
+                price_cache[cache_key] = quarter_price
 
-            equity_value += float(price or 0.0)
+            equity_value += quarter_price
 
         total_value = cash + equity_value
         equity_history.append({
@@ -218,26 +223,26 @@ async def get_portfolio_equity_chart(current_user: dict = Depends(get_current_us
 async def get_property_price_chart(property_id: str, current_user: dict = Depends(get_current_user)):
     """
     Get price history for a specific property
-    
+
     Returns time series of property value by quarter
     """
     db = get_database()
-    
+
     prop_id = parse_object_id(property_id, "property ID")
-    
+
     # Get property
     property_data = await db.properties.find_one({"_id": prop_id})
     if not property_data:
         raise HTTPException(status_code=404, detail="Property not found")
-    
+
     # Get price history
     price_history = await db.pricehistory.find({
         "propertyId": prop_id
     }).sort("t", 1).to_list(length=None)
-    
+
     quarters = [ph['t'] for ph in price_history]
     prices = [ph['price'] for ph in price_history]
-    
+
     return {
         "propertyId": property_id,
         "zone": property_data.get('zone'),

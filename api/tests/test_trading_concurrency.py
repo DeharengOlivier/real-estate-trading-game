@@ -21,7 +21,6 @@ import asyncio
 from datetime import datetime
 
 import pytest
-from bson import ObjectId
 from httpx import AsyncClient
 
 import api.routers.trading as trading

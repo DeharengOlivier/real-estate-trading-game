@@ -4,16 +4,13 @@ Unit tests for pure business-logic helpers in api.services and api.auth.
 These exercise the pricing/quarter math and password/JWT helpers directly,
 without going through the HTTP layer.
 """
-import math
 import pytest
-
 from bson import ObjectId
-
-from api import services
-from api.database import get_database
-from api.auth import get_password_hash, verify_password, create_access_token, SECRET_KEY, ALGORITHM
 from jose import jwt
 
+from api import services
+from api.auth import ALGORITHM, SECRET_KEY, create_access_token, get_password_hash, verify_password
+from api.database import get_database
 
 # ==================== QUARTER MATH ====================
 

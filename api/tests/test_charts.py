@@ -1,13 +1,14 @@
 """
 Tests for the charts router: portfolio equity series and property price history.
 """
-import pytest
-from httpx import AsyncClient
-from bson import ObjectId
 from datetime import datetime
 
-from api.main import app
+import pytest
+from bson import ObjectId
+from httpx import AsyncClient
+
 from api.database import get_database
+from api.main import app
 
 
 @pytest.mark.asyncio

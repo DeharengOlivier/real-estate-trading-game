@@ -3,21 +3,24 @@ FastAPI main application for Real Estate Simulation
 Refactored following SOLID principles - Single Responsibility
 Main file only handles application setup and router registration
 """
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.requests import Request
-from contextlib import asynccontextmanager
 import logging
 import time
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
 
 from api.database import (
-    connect_to_mongo, connect_to_redis, 
-    close_mongo_connection, close_redis_connection
+    close_mongo_connection,
+    close_redis_connection,
+    connect_to_mongo,
+    connect_to_redis,
 )
 
 # Import routers
-from api.routers import health, auth, admin, portfolio, trading, game, charts
+from api.routers import admin, auth, charts, game, health, portfolio, trading
 
 # Configure logging
 logging.basicConfig(
@@ -38,9 +41,9 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     await connect_to_redis()
     logger.info("✅ All connections established")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("🛑 Shutting down Real Estate Game API...")
     await close_mongo_connection()
@@ -81,20 +84,20 @@ async def log_requests(request: Request, call_next):
     Logs all HTTP requests with timing information
     """
     start_time = time.time()
-    
+
     try:
         response = await call_next(request)
         process_time = time.time() - start_time
-        
+
         logger.info(
             f"{request.method} {request.url.path} "
             f"completed in {process_time:.3f}s with status {response.status_code}"
         )
-        
+
         return response
     except Exception as e:
         process_time = time.time() - start_time
-        logger.error(f"Request failed after {process_time:.3f}s: {str(e)}")
+        logger.error(f"Request failed after {process_time:.3f}s: {e!s}")
         raise
 
 
@@ -104,8 +107,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     Global exception handler
     Catches unhandled exceptions and returns consistent error response
     """
-    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
-    
+    logger.error(f"Unhandled exception: {exc!s}", exc_info=True)
+
     return JSONResponse(
         status_code=500,
         content={

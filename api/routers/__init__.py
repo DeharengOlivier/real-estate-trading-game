@@ -22,18 +22,18 @@ Available Routers:
 Why this __init__.py file exists:
     This file marks the routers/ directory as a Python sub-package, allowing
     imports like:
-    
+
         from api.routers.auth import router as auth_router
         from api.routers.trading import router as trading_router
-    
+
     Without this file, the routers would not be importable, and the main
     application in main.py could not register them.
 
 Router Registration Pattern:
     Each router is registered in main.py with:
-    
+
         app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
-    
+
     This creates URL patterns like:
         - POST /auth/register
         - POST /auth/login

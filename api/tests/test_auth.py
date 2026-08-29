@@ -3,9 +3,9 @@ Tests for authentication endpoints
 """
 import pytest
 from httpx import AsyncClient
-from api.main import app
-from api.database import get_database
+
 import api.database as database
+from api.main import app
 
 
 @pytest.mark.asyncio
@@ -18,7 +18,7 @@ async def test_register_user_success():
             "password": "SecurePass123",
             "name": "New User"
         })
-        
+
         assert response.status_code == 201  # Changed from 200
         data = response.json()
         assert "access_token" in data
@@ -37,15 +37,13 @@ async def test_register_weak_password():
             "password": "weak",  # Too short, no uppercase, no digit
             "name": "Weak User"
         })
-        
+
         assert response.status_code == 422  # Validation error
 
 
 @pytest.mark.asyncio
 async def test_register_duplicate_username():
     """Test registration with existing username fails"""
-    db = get_database()
-    
     # First registration
     async with AsyncClient(app=app, base_url="http://test") as client:
         await client.post("/auth/register", json={
@@ -54,7 +52,7 @@ async def test_register_duplicate_username():
             "password": "SecurePass123",
             "name": "First User"
         })
-        
+
         # Try to register again with same username
         response = await client.post("/auth/register", json={
             "username": "duplicate",
@@ -62,7 +60,7 @@ async def test_register_duplicate_username():
             "password": "SecurePass456",
             "name": "Second User"
         })
-        
+
         assert response.status_code == 409  # 409 Conflict is correct for duplicate
         # Check that error message mentions username
         assert "username" in response.json()["detail"].lower()
@@ -72,13 +70,13 @@ async def test_register_duplicate_username():
 async def test_login_success(test_user_and_token):
     """Test successful login"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post("/auth/login", json={
             "username": user_data["username"],
             "password": user_data["password"]
         })
-        
+
         assert response.status_code == 200
         data = response.json()
         assert "access_token" in data
@@ -97,13 +95,13 @@ async def test_login_wrong_password():
             "password": "CorrectPass123",
             "name": "Test Login"
         })
-        
+
         # Try to login with wrong password
         response = await client.post("/auth/login", json={
             "username": "testlogin",
             "password": "WrongPass123"
         })
-        
+
         assert response.status_code == 401
         assert "incorrect" in response.json()["detail"].lower()
 
@@ -116,7 +114,7 @@ async def test_login_nonexistent_user():
             "username": "nonexistent",
             "password": "AnyPass123"
         })
-        
+
         assert response.status_code == 401
 
 
@@ -130,7 +128,7 @@ async def test_rate_limiting_on_login():
                 "username": "ratelimit",
                 "password": "WrongPass123"
             })
-            
+
             if i < 5:
                 # First 5 attempts should get 401 or 429 (depending on IP tracking)
                 assert response.status_code in [401, 429]
@@ -145,7 +143,7 @@ async def test_protected_endpoint_without_token():
     """Test that protected endpoints require authentication"""
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get("/portfolio/summary")
-        
+
         # FastAPI returns 403 when credentials are not provided
         assert response.status_code == 403
 
@@ -158,7 +156,7 @@ async def test_protected_endpoint_with_invalid_token():
             "/portfolio/summary",
             headers={"Authorization": "Bearer invalid_token_here"}
         )
-        
+
         assert response.status_code == 401
 
 

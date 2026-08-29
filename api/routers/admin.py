@@ -11,16 +11,15 @@ players by default, rather than by remembering to add a decorator.
 Handlers still take ``current_user`` where they need to know who acted; that
 dependency answers identity, while the router-level one answers entitlement.
 """
-from fastapi import APIRouter, HTTPException, Depends, status
-from bson import ObjectId
-from typing import List
 import logging
 
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from api.auth import get_current_user, require_admin
 from api.database import get_database
 from api.identifiers import parse_object_id
 from api.models import Property, Renovation
-from api.auth import get_current_user, require_admin
-from api.services import get_current_quarter, compute_property_price
+from api.services import compute_property_price, get_current_quarter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -39,19 +38,19 @@ async def create_property(
 ):
     """
     Create a new property
-    
+
     Also creates a listing for the property with computed price
     Available to all authenticated users
     """
     db = get_database()
-    
+
     prop_dict = property_data.model_dump(exclude={"id"})
     result = await db.properties.insert_one(prop_dict)
-    
+
     # Create listing for this property
     current_t = await get_current_quarter(db)
     market_index = await db.marketindex.find_one({"t": current_t})
-    
+
     if market_index:
         price = compute_property_price(prop_dict, market_index)
         await db.listings.insert_one({
@@ -60,7 +59,7 @@ async def create_property(
             "lastComputedPrice": price,
             "lastT": current_t
         })
-    
+
     logger.info(f"Admin created property: {result.inserted_id}")
     return {"id": str(result.inserted_id), "message": "Property created successfully"}
 
@@ -74,7 +73,7 @@ async def list_all_properties(
     """List all properties with pagination (available to all authenticated users)"""
     db = get_database()
     properties = await db.properties.find().skip(skip).limit(limit).to_list(length=limit)
-    
+
     return [
         {
             "id": str(prop["_id"]),
@@ -98,13 +97,13 @@ async def get_property_by_id(
 ):
     """Get detailed property information by ID (available to all authenticated users)"""
     db = get_database()
-    
+
     prop_id = parse_object_id(property_id, "property ID")
-    
+
     prop = await db.properties.find_one({"_id": prop_id})
     if not prop:
         raise HTTPException(status_code=404, detail="Property not found")
-    
+
     return {
         "id": str(prop["_id"]),
         "zone": prop["zone"],
@@ -126,19 +125,19 @@ async def update_property(
 ):
     """Update property characteristics (available to all authenticated users)"""
     db = get_database()
-    
+
     prop_id = parse_object_id(property_id, "property ID")
-    
+
     prop_dict = property_data.model_dump(exclude={"id"})
-    
+
     result = await db.properties.update_one(
         {"_id": prop_id},
         {"$set": prop_dict}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Property not found")
-    
+
     logger.info(f"Admin updated property: {property_id}")
     return {"message": "Property updated successfully"}
 
@@ -150,21 +149,21 @@ async def delete_property(
 ):
     """Delete a property (only if not owned) - available to all authenticated users"""
     db = get_database()
-    
+
     prop_id = parse_object_id(property_id, "property ID")
-    
+
     # Check if property is in use
     holding = await db.holdings.find_one({"propertyId": prop_id})
     if holding:
         raise HTTPException(status_code=400, detail="Cannot delete property that is owned")
-    
+
     result = await db.properties.delete_one({"_id": prop_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Property not found")
-    
+
     # Delete associated listing
     await db.listings.delete_one({"propertyId": prop_id})
-    
+
     logger.info(f"Admin deleted property: {property_id}")
     return {"message": "Property deleted successfully"}
 
@@ -178,15 +177,15 @@ async def create_renovation(
 ):
     """Create a new renovation type (available to all authenticated users)"""
     db = get_database()
-    
+
     # Check if code already exists
     existing = await db.renovations.find_one({"code": renovation_data.code})
     if existing:
         raise HTTPException(status_code=400, detail="Renovation code already exists")
-    
+
     reno_dict = renovation_data.model_dump(exclude={"id"})
     result = await db.renovations.insert_one(reno_dict)
-    
+
     logger.info(f"Admin created renovation type: {renovation_data.code}")
     return {"id": str(result.inserted_id), "message": "Renovation type created successfully"}
 
@@ -196,11 +195,11 @@ async def get_all_renovations(current_user: dict = Depends(get_current_user)):
     """Get all renovation types (available to all authenticated users)"""
     db = get_database()
     renovations = await db.renovations.find().to_list(length=None)
-    
+
     # Convert ObjectId to string
     for reno in renovations:
         reno["id"] = str(reno.pop("_id"))
-    
+
     return renovations
 
 
@@ -212,17 +211,17 @@ async def update_renovation(
 ):
     """Update renovation type (available to all authenticated users)"""
     db = get_database()
-    
+
     reno_dict = renovation_data.model_dump(exclude={"id"})
-    
+
     result = await db.renovations.update_one(
         {"code": code},
         {"$set": reno_dict}
     )
-    
+
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Renovation not found")
-    
+
     logger.info(f"Admin updated renovation: {code}")
     return {"message": "Renovation updated successfully"}
 
@@ -234,11 +233,11 @@ async def delete_renovation(
 ):
     """Delete a renovation type (available to all authenticated users)"""
     db = get_database()
-    
+
     result = await db.renovations.delete_one({"code": code})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Renovation not found")
-    
+
     logger.info(f"Admin deleted renovation: {code}")
     return {"message": "Renovation deleted successfully"}
 
@@ -254,7 +253,7 @@ async def list_all_trades(
     """List all trades across all portfolios (available to all authenticated users)"""
     db = get_database()
     trades = await db.trades.find().sort("ts", -1).skip(skip).limit(limit).to_list(length=limit)
-    
+
     return [
         {
             "id": str(trade["_id"]),

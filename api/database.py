@@ -2,13 +2,16 @@
 Database connection and utilities
 """
 import os
-from motor.motor_asyncio import AsyncIOMotorClient
-from typing import Optional
-import redis.asyncio as redis
+from typing import Any
 
-# MongoDB client
-mongodb_client: Optional[AsyncIOMotorClient] = None
-mongodb_db = None
+import redis.asyncio as redis
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# MongoDB client and database. Motor exports AsyncIOMotorClient as a value
+# rather than a class a type checker can use, so the handles are held loosely
+# and the code around them stays checked.
+mongodb_client: Any = None
+mongodb_db: Any = None
 
 # Redis client (optional)
 redis_client = None
@@ -17,10 +20,10 @@ redis_client = None
 async def connect_to_mongo():
     """Connect to MongoDB"""
     global mongodb_client, mongodb_db
-    
+
     mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
     mongodb_db_name = os.getenv("MONGODB_DB", "realestate")
-    
+
     mongodb_client = AsyncIOMotorClient(mongodb_url)
     mongodb_db = mongodb_client[mongodb_db_name]
 
@@ -59,12 +62,12 @@ async def ensure_indexes(db) -> None:
 async def connect_to_redis():
     """Connect to Redis (optional, for caching)"""
     global redis_client
-    
+
     try:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         redis_client = await redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
         await redis_client.ping()
-        print(f"✓ Connected to Redis")
+        print("✓ Connected to Redis")
     except Exception as e:
         print(f"⚠ Redis connection failed (optional): {e}")
         redis_client = None

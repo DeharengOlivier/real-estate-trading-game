@@ -2,11 +2,12 @@
 Pydantic models for Real Estate Simulation
 Validation for all MongoDB entities
 """
-from typing import Annotated, Optional, List, Literal
 from datetime import datetime
-from pydantic import BaseModel, Field, EmailStr, field_validator
-from pydantic.functional_validators import AfterValidator
+from typing import Annotated, Literal
+
 from bson import ObjectId
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic.functional_validators import AfterValidator
 
 
 class PyObjectId(ObjectId):
@@ -24,6 +25,20 @@ class PyObjectId(ObjectId):
     @classmethod
     def __get_pydantic_json_schema__(cls, field_schema):
         field_schema.update(type="string")
+
+
+# Every model below describes a stored document, and they all need the same
+# two settings: accept the stored field name as well as the alias, and allow
+# ObjectId, which pydantic does not know how to validate on its own. Stated
+# once rather than repeated verbatim under each class.
+#
+# ``json_encoders`` used to be here too. It is deprecated in pydantic v2, and
+# every id these models expose is serialised as a string by the route handlers
+# before it leaves, so nothing depended on it.
+DOCUMENT_MODEL_CONFIG = ConfigDict(
+    populate_by_name=True,
+    arbitrary_types_allowed=True,
+)
 
 
 def _must_look_like_an_object_id(value: str) -> str:
@@ -53,18 +68,15 @@ class User(BaseModel):
     not match the collection is worse than no model at all. ``hashedPassword``
     in particular is the field ``authenticate_user`` reads.
     """
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     name: str
     hashedPassword: str  # bcrypt hash, never the password itself
-    roles: List[str] = Field(default_factory=lambda: ["user"])
+    roles: list[str] = Field(default_factory=lambda: ["user"])
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class UserRegister(BaseModel):
@@ -114,7 +126,7 @@ class Token(BaseModel):
 
 class Property(BaseModel):
     """Property entity (intrinsic characteristics)"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     zone: str
     type: Literal["house", "apartment"]
     surface: float = Field(gt=0)
@@ -125,10 +137,7 @@ class Property(BaseModel):
     base_ppm: float = Field(gt=0)  # Base price per m² for zone/type
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class LocalIndex(BaseModel):
@@ -142,7 +151,7 @@ class LocalIndex(BaseModel):
 
 class MarketIndex(BaseModel):
     """Market indices for a given quarter"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     t: str  # Quarter "YYYY-Q"
     inflation: float
     rate: float  # Interest rate
@@ -150,39 +159,30 @@ class MarketIndex(BaseModel):
     unemployment: float
     confidence: float  # Consumer confidence
     policy: float  # Policy impact
-    locals: List[LocalIndex]
+    locals: list[LocalIndex]
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class Listing(BaseModel):
     """Market listing"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     propertyId: PyObjectId
     isAvailable: bool = True
     lastComputedPrice: float = Field(ge=0)
     lastT: str  # Last quarter computed "YYYY-Q"
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class Portfolio(BaseModel):
     """User portfolio"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     userId: PyObjectId
     cash: float = Field(ge=0)
     createdAt: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class WorkItem(BaseModel):
@@ -195,17 +195,14 @@ class WorkItem(BaseModel):
 
 class Holding(BaseModel):
     """Property held in portfolio"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     portfolioId: PyObjectId
     propertyId: PyObjectId
     buyPrice: float = Field(ge=0)
     buyDate: datetime = Field(default_factory=datetime.utcnow)
-    works: List[WorkItem] = []
+    works: list[WorkItem] = []
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class RenovationDelta(BaseModel):
@@ -219,22 +216,19 @@ class RenovationDelta(BaseModel):
 
 class Renovation(BaseModel):
     """Renovation type catalog"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     code: str
     label: str
     cost: float = Field(ge=0)
     durationQ: int = Field(ge=1)  # Duration in quarters
     delta: RenovationDelta
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class Trade(BaseModel):
     """Trade (buy or sell)"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     portfolioId: PyObjectId
     propertyId: PyObjectId
     side: Literal["buy", "sell"]
@@ -242,23 +236,17 @@ class Trade(BaseModel):
     fees: float = Field(ge=0)
     ts: datetime = Field(default_factory=datetime.utcnow)
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 class PriceHistory(BaseModel):
     """Historical price for a property at a given quarter"""
-    id: Optional[PyObjectId] = Field(default=None, alias="_id")
+    id: PyObjectId | None = Field(default=None, alias="_id")
     propertyId: PyObjectId
     t: str  # Quarter "YYYY-Q"
     price: float = Field(ge=0)
 
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+    model_config = DOCUMENT_MODEL_CONFIG
 
 
 # Request/Response models

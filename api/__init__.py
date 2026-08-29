@@ -22,13 +22,13 @@ Package Structure:
 Why this __init__.py file exists:
     In Python, __init__.py files serve to mark a directory as a Python package.
     This allows the directory to be imported as a module, enabling imports like:
-    
+
         from api.database import get_database
         from api.auth import get_current_user
-    
+
     Without this file, Python would not recognize 'api/' as a package, and
     imports would fail with "ModuleNotFoundError: No module named 'api'".
-    
+
     This is a fundamental part of Python's package system and is required
     for proper module organization and dependency management.
 
@@ -39,6 +39,6 @@ Technical Details:
     - Redis for caching (optional, graceful degradation)
     - JWT tokens for stateless authentication
     - Bcrypt for password hashing
-    
+
 Author: ECAM Real Estate Game Team
 """

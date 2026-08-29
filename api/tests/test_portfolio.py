@@ -1,13 +1,13 @@
 """
 Tests for the portfolio router: summary, P&L computation, and holdings detail.
 """
-import pytest
-from httpx import AsyncClient
-from bson import ObjectId
 from datetime import datetime
 
-from api.main import app
+import pytest
+from httpx import AsyncClient
+
 from api.database import get_database
+from api.main import app
 
 
 async def _add_property(db, *, zone="Ixelles", type_="apartment", surface=80,

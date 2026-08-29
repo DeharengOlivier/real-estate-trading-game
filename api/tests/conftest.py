@@ -8,8 +8,10 @@ The test suite runs with NO external services: MongoDB is replaced by
 ``get_redis_client`` accessors) work unchanged.
 """
 import asyncio
+import contextlib
 import os
 from datetime import datetime
+from typing import Any
 
 # api.auth refuses to import without a usable SECRET_KEY, which is the point of
 # the check. Provide one before anything imports the application. setdefault,
@@ -19,10 +21,10 @@ os.environ.setdefault(
     "SECRET_KEY", "test-only-signing-key-do-not-use-outside-the-test-suite"
 )
 
+import fakeredis.aioredis as fakeredis
 import pytest
 import pytest_asyncio
 from mongomock_motor import AsyncMongoMockClient
-import fakeredis.aioredis as fakeredis
 
 import api.database as database
 from api.auth import create_access_token, get_password_hash
@@ -30,7 +32,7 @@ from api.auth import create_access_token, get_password_hash
 # Reusable singletons for the whole test session. Keeping a single mongomock
 # client means data inserted by a fixture is visible to the request handlers,
 # while we reset collections between tests for isolation.
-_mock_mongo_client = AsyncMongoMockClient()
+_mock_mongo_client: Any = AsyncMongoMockClient()
 _mock_db_name = "realestate_test"
 
 # Collections that get wiped between tests.
@@ -73,12 +75,10 @@ class Rendezvous:
         self.arrived += 1
         if self.arrived >= self.party:
             self.everybody_is_here.set()
-        try:
+        with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(
                 self.everybody_is_here.wait(), timeout=LONE_ARRIVAL_GRACE_SECONDS
             )
-        except asyncio.TimeoutError:
-            pass
 
 
 class CountingCollection:
@@ -199,7 +199,7 @@ async def _seed_baseline(db):
     assert an exact item count stay deterministic; tests that need a property
     create their own.
     """
-    from simulation.constants import ZONES, RENOVATIONS
+    from simulation.constants import RENOVATIONS, ZONES
 
     locals_data = [
         {"zone": z, "access": 0.0, "attract": 0.0, "nuisance": 0.05, "tension": 0.0}

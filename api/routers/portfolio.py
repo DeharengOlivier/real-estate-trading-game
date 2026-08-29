@@ -2,14 +2,14 @@
 Portfolio router - Portfolio management and holdings
 Single Responsibility: Portfolio operations and reporting
 """
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List
-from datetime import datetime
 import logging
+from datetime import datetime
 
-from api.database import get_database
-from api.models import PortfolioSummary, HoldingDetail
+from fastapi import APIRouter, Depends, HTTPException
+
 from api.auth import get_current_user
+from api.database import get_database
+from api.models import HoldingDetail, PortfolioSummary
 from api.services import (
     get_current_quarter,
     get_property_current_prices,
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
 async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     """
     Get portfolio summary with cash, equity, total value, and P&L
-    
+
     P&L Calculation Logic:
     - Initial capital: 1,000,000 €
     - Total P&L = (Current cash + Current value of holdings) - Initial capital
@@ -35,7 +35,7 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
       * Renovation costs
       * Realized gains/losses on sales
       * Unrealized gains/losses on held properties
-    
+
     Returns:
     - cash: Available cash balance
     - equity: Current value of all holdings
@@ -44,24 +44,24 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     - pnlYTD: Year-to-date profit/loss
     """
     db = get_database()
-    
+
     # Get the user's portfolio
     portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
-    
+
     portfolio_id = portfolio['_id']
     cash = portfolio['cash']
-    
+
     # The amount every new account starts with, named once in simulation.constants.
     INITIAL_CAPITAL = float(INITIAL_CASH)
-    
+
     # Get current quarter
     current_t = await get_current_quarter(db)
-    
+
     # Get all current holdings
     holdings = await db.holdings.find({"portfolioId": portfolio_id}).to_list(length=None)
-    
+
     # Value the holdings. One batched price lookup for the whole portfolio,
     # not one per property: this page used to cost a round trip per holding.
     property_ids = [holding['propertyId'] for holding in holdings]
@@ -120,15 +120,15 @@ async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
     )
 
 
-@router.get("/holdings", response_model=List[HoldingDetail])
+@router.get("/holdings", response_model=list[HoldingDetail])
 async def get_holdings(current_user: dict = Depends(get_current_user)):
     """
     Get detailed list of holdings with current prices and P&L
-    
+
     P&L Calculation per property:
     - P&L = Current value - (Buy price + Purchase fees + Renovation costs)
     - Includes all real acquisition and improvement costs
-    
+
     Returns for each holding:
     - Property details (zone, type, surface)
     - Buy price vs current price
@@ -136,30 +136,30 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
     - Number of ongoing renovation works
     """
     db = get_database()
-    
+
     # Get the user's portfolio
     portfolio = await db.portfolios.find_one({"userId": current_user["_id"]})
     if not portfolio:
         return []
-    
+
     portfolio_id = portfolio['_id']
     current_t = await get_current_quarter(db)
-    
+
     # Get all holdings
     holdings = await db.holdings.find({"portfolioId": portfolio_id}).to_list(length=None)
-    
+
     # Get all trades to find buy fees
     all_trades = await db.trades.find({
         "portfolioId": portfolio_id
     }).to_list(length=None)
-    
+
     # Map propertyId -> buy fees
     buy_fees_map = {}
     for trade in all_trades:
         if trade['side'] == 'buy':
             prop_id_str = str(trade['propertyId'])
             buy_fees_map[prop_id_str] = trade.get('fees', 0)
-    
+
     # Everything the loop needs, read in three queries instead of three per
     # holding: the properties, their current prices, and the renovations any of
     # the works refer to.
@@ -209,10 +209,10 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
         # P&L = current value - total invested
         pnl = current_price - total_invested
         pnl_pct = (pnl / total_invested * 100) if total_invested > 0 else 0
-        
+
         # Count ongoing works
         ongoing_works = sum(1 for w in holding.get('works', []) if w['status'] == 'ongoing')
-        
+
         results.append(HoldingDetail(
             holdingId=str(holding['_id']),
             propertyId=str(property_id),
@@ -228,5 +228,5 @@ async def get_holdings(current_user: dict = Depends(get_current_user)):
             pnlPct=round(pnl_pct, 2),
             ongoingWorks=ongoing_works
         ))
-    
+
     return results

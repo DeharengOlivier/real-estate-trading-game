@@ -3,15 +3,25 @@ Business logic and pricing calculations
 """
 import math
 import random
-from typing import Dict, List
-from datetime import datetime
+
 from bson import ObjectId
 
 from simulation.constants import (
-    A_INF, A_RATE, A_INC, A_UNEMP, A_CONF, A_POL,
-    B_ACC, B_ATTR, B_NUI, B_TENS,
-    W_EPC, W_STATE, W_KITCHEN, W_BATH,
-    ZONES
+    A_CONF,
+    A_INC,
+    A_INF,
+    A_POL,
+    A_RATE,
+    A_UNEMP,
+    B_ACC,
+    B_ATTR,
+    B_NUI,
+    B_TENS,
+    W_BATH,
+    W_EPC,
+    W_KITCHEN,
+    W_STATE,
+    ZONES,
 )
 
 # Per-zone appreciation trends (% per quarter), calibrated on real Belgian data.
@@ -33,7 +43,7 @@ ZONE_TRENDS = {
 }
 
 
-def compute_macro_index(market_index: Dict) -> float:
+def compute_macro_index(market_index: dict) -> float:
     """Compute MacroIndex(t) from market data"""
     exponent = (
         A_INF * market_index['inflation']
@@ -46,7 +56,7 @@ def compute_macro_index(market_index: Dict) -> float:
     return math.exp(exponent)
 
 
-def compute_local_index(local_data: Dict) -> float:
+def compute_local_index(local_data: dict) -> float:
     """Compute LocalIndex(zone, t) from local data"""
     exponent = (
         B_ACC * local_data['access']
@@ -58,13 +68,13 @@ def compute_local_index(local_data: Dict) -> float:
 
 
 def compute_property_price(
-    property_data: Dict,
-    market_index: Dict,
+    property_data: dict,
+    market_index: dict,
     add_noise: bool = False
 ) -> float:
     """
     Compute property price at quarter t
-    
+
     price_b(t) = base_ppm * surface
                  * (1 + w_epc*EPC) * (1 + w_state*State)
                  * (1 + w_kitchen*Kitchen) * (1 + w_bath*Bath)
@@ -72,7 +82,7 @@ def compute_property_price(
     """
     # Base price
     base_price = property_data['base_ppm'] * property_data['surface']
-    
+
     # Property characteristics multipliers
     char_multiplier = (
         (1 + W_EPC * property_data['epc']) *
@@ -80,25 +90,25 @@ def compute_property_price(
         (1 + W_KITCHEN * property_data['kitchen']) *
         (1 + W_BATH * property_data['bath'])
     )
-    
+
     # Macro index
     macro_idx = compute_macro_index(market_index)
-    
+
     # Local index
     local_data = None
     for loc in market_index['locals']:
         if loc['zone'] == property_data['zone']:
             local_data = loc
             break
-    
+
     if not local_data:
         raise ValueError(f"No local data for zone {property_data['zone']}")
-    
+
     local_idx = compute_local_index(local_data)
-    
+
     # Noise (not used in API, only in seed)
     noise = 1.0
-    
+
     price = base_price * char_multiplier * macro_idx * local_idx * noise
     return max(0, price)
 
@@ -123,18 +133,18 @@ def add_quarters(t: str, n: int) -> str:
     return get_quarter_string(new_year, new_quarter)
 
 
-def apply_renovation_delta(property_data: Dict, delta: Dict) -> Dict:
+def apply_renovation_delta(property_data: dict, delta: dict) -> dict:
     """Apply renovation deltas to property characteristics"""
     # Apply deltas with clamping to [0, 1]
     property_data['epc'] = max(0, min(1, property_data['epc'] + delta.get('epc', 0)))
     property_data['state'] = max(0, min(1, property_data['state'] + delta.get('state', 0)))
     property_data['kitchen'] = max(0, min(1, property_data['kitchen'] + delta.get('kitchen', 0)))
     property_data['bath'] = max(0, min(1, property_data['bath'] + delta.get('bath', 0)))
-    
+
     # Apply surface percentage increase
     if delta.get('surfacePct', 0) > 0:
         property_data['surface'] *= (1 + delta['surfacePct'])
-    
+
     return property_data
 
 
@@ -153,23 +163,23 @@ async def get_property_current_price(db, property_id: ObjectId, current_t: str) 
         "propertyId": property_id,
         "t": current_t
     })
-    
+
     if price_record:
         return price_record['price']
-    
+
     # If not found, compute it
     property_data = await db.properties.find_one({"_id": property_id})
     market_index = await db.marketindex.find_one({"t": current_t})
-    
+
     if not property_data or not market_index:
         return 0
-    
+
     return compute_property_price(property_data, market_index)
 
 
 async def get_property_current_prices(
-    db, property_ids: List[ObjectId], current_t: str
-) -> Dict[ObjectId, float]:
+    db, property_ids: list[ObjectId], current_t: str
+) -> dict[ObjectId, float]:
     """Current price of several properties, in a bounded number of queries.
 
     Same answer as calling :func:`get_property_current_price` once per id, at a
@@ -194,7 +204,7 @@ async def get_property_current_prices(
     if not unique_ids:
         return {}
 
-    prices: Dict[ObjectId, float] = {}
+    prices: dict[ObjectId, float] = {}
 
     history = await db.pricehistory.find({
         "propertyId": {"$in": unique_ids},
@@ -223,16 +233,16 @@ async def get_property_current_prices(
     return prices
 
 
-async def generate_next_market_quarter(db, current_t: str) -> Dict:
+async def generate_next_market_quarter(db, current_t: str) -> dict:
     """
     Generate market data for the next quarter based on the previous quarter
     with realistic drift and variations
     """
     next_t = add_quarters(current_t, 1)
-    
+
     # Get current quarter data as baseline
     current_market = await db.marketindex.find_one({"t": current_t})
-    
+
     if not current_market:
         # If no data exists, create initial realistic values
         inflation = 0.02
@@ -241,7 +251,7 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
         unemployment = 0.05
         confidence = 0.0
         policy = 0.0
-        
+
         locals_data = []
         for zone in ZONES:
             locals_data.append({
@@ -259,7 +269,7 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
         unemployment = current_market['unemployment'] + random.uniform(-0.002, 0.002)
         confidence = current_market['confidence'] + random.uniform(-0.005, 0.005)
         policy = current_market['policy'] + random.uniform(-0.003, 0.003)
-        
+
         # Clamp macro values to realistic ranges
         inflation = max(-0.05, min(0.10, inflation))
         rate = max(0.005, min(0.05, rate))
@@ -267,15 +277,15 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
         unemployment = max(0.02, min(0.15, unemployment))
         confidence = max(-0.10, min(0.10, confidence))
         policy = max(-0.05, min(0.05, policy))
-        
+
         # Update local indices with drift AND zone-specific trends
         locals_data = []
         current_locals = {loc['zone']: loc for loc in current_market['locals']}
-        
+
         for zone in ZONES:
             # Get zone-specific appreciation trend
             zone_trend = ZONE_TRENDS.get(zone, 0.002)  # Default +0.2%/quarter if not defined
-            
+
             if zone in current_locals:
                 current_loc = current_locals[zone]
                 # Apply random drift (kept small to limit volatility) plus the structural trend
@@ -288,13 +298,13 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
                 attract = random.uniform(-0.05, 0.05) + zone_trend
                 nuisance = random.uniform(0.0, 0.10)
                 tension = random.uniform(-0.02, 0.02) + (zone_trend * 0.5)
-            
+
             # Clamp local values
             access = max(-0.10, min(0.10, access))
             attract = max(-0.10, min(0.10, attract))
             nuisance = max(0.0, min(0.20, nuisance))
             tension = max(-0.10, min(0.10, tension))
-            
+
             locals_data.append({
                 'zone': zone,
                 'access': round(access, 4),
@@ -302,7 +312,7 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
                 'nuisance': round(nuisance, 4),
                 'tension': round(tension, 4)
             })
-    
+
     # Create new market index document
     new_market = {
         't': next_t,
@@ -314,8 +324,8 @@ async def generate_next_market_quarter(db, current_t: str) -> Dict:
         'policy': round(policy, 4),
         'locals': locals_data
     }
-    
+
     # Insert into database
     await db.marketindex.insert_one(new_market)
-    
+
     return new_market

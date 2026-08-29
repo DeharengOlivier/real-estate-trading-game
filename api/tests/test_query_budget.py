@@ -13,9 +13,9 @@ Measured with 24 holdings of 3 completed works each:
 The remaining calls are the portfolio, the current quarter, the holdings, the
 trades, and the batched reads of properties, prices and renovations.
 """
-import pytest
 from datetime import datetime
 
+import pytest
 from httpx import AsyncClient
 
 import api.routers.portfolio as portfolio_router

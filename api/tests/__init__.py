@@ -18,11 +18,11 @@ Test Structure:
 Why this __init__.py file exists:
     This file marks tests/ as a Python package, which is CRITICAL for pytest
     to work correctly. It enables:
-    
+
     1. Test Discovery: Pytest can find and execute test files
     2. Import Resolution: Tests can import from parent packages
     3. Fixture Sharing: conftest.py fixtures are accessible to all tests
-    
+
     Without this file:
         - Pytest may fail to discover tests
         - Imports like "from api.database import get_database" would fail

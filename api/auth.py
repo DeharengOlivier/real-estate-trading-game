@@ -2,14 +2,14 @@
 Authentication utilities for Real Estate Simulation
 Simple JWT-based authentication
 """
+import os
 from datetime import datetime, timedelta
-from typing import Optional
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+
 import bcrypt
 from bson import ObjectId
-import os
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
 
 from api.database import get_database
 
@@ -97,7 +97,7 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token"""
     to_encode = data.copy()
     if expires_delta:
@@ -134,7 +134,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if user_id is None:
             raise credentials_exception
     except JWTError:
-        raise credentials_exception
+        # `from None`: a caller with a bad token learns their token is bad, and
+        # nothing about why the library rejected it.
+        raise credentials_exception from None
 
     if not ObjectId.is_valid(user_id):
         raise credentials_exception
@@ -174,15 +176,15 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     return current_user
 
 
-async def authenticate_user(username: str, password: str) -> Optional[dict]:
+async def authenticate_user(username: str, password: str) -> dict | None:
     """Authenticate a user by username and password"""
     db = get_database()
     user = await db.users.find_one({"username": username})
-    
+
     if not user:
         return None
-    
+
     if not verify_password(password, user["hashedPassword"]):
         return None
-    
+
     return user

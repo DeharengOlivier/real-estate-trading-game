@@ -2,17 +2,18 @@
 Tests for admin CRUD endpoints
 """
 import pytest
-from httpx import AsyncClient
-from api.main import app
-from api.database import get_database
 from bson import ObjectId
+from httpx import AsyncClient
+
+from api.database import get_database
+from api.main import app
 
 
 @pytest.mark.asyncio
 async def test_create_property(test_user_and_token):
     """Test creating a property"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post("/admin/properties", headers=headers, json={
             "zone": "Bruxelles-Centre",
@@ -24,7 +25,7 @@ async def test_create_property(test_user_and_token):
             "bath": 0.6,
             "base_ppm": 3000
         })
-        
+
         assert response.status_code == 201
         data = response.json()
         assert "id" in data
@@ -34,7 +35,7 @@ async def test_create_property(test_user_and_token):
 async def test_create_property_invalid_data(test_user_and_token):
     """Test creating property with invalid data fails"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post("/admin/properties", headers=headers, json={
             "zone": "Test Zone",
@@ -46,7 +47,7 @@ async def test_create_property_invalid_data(test_user_and_token):
             "bath": 0.6,
             "base_ppm": 0  # Invalid: must be > 0
         })
-        
+
         assert response.status_code == 422  # Validation error
 
 
@@ -96,7 +97,7 @@ async def test_get_property_by_id(test_user_and_token):
         property_id = create_response.json()["id"]
 
         response = await client.get(f"/admin/properties/{property_id}", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.json()
         assert data["id"] == property_id
@@ -109,10 +110,10 @@ async def test_get_nonexistent_property(test_user_and_token):
     """Test retrieving non-existent property returns 404"""
     user_data, token, headers = test_user_and_token
     fake_id = str(ObjectId())
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get(f"/admin/properties/{fake_id}", headers=headers)
-        
+
         assert response.status_code == 404
 
 
@@ -120,7 +121,7 @@ async def test_get_nonexistent_property(test_user_and_token):
 async def test_update_property(test_user_and_token):
     """Test updating a property"""
     user_data, token, headers = test_user_and_token
-    
+
     # Create a property first
     async with AsyncClient(app=app, base_url="http://test") as client:
         create_response = await client.post("/admin/properties", headers=headers, json={
@@ -134,7 +135,7 @@ async def test_update_property(test_user_and_token):
             "base_ppm": 2800
         })
         property_id = create_response.json()["id"]
-        
+
         # Update it
         response = await client.put(f"/admin/properties/{property_id}", headers=headers, json={
             "zone": "Ixelles",
@@ -146,7 +147,7 @@ async def test_update_property(test_user_and_token):
             "bath": 0.7,
             "base_ppm": 3200
         })
-        
+
         assert response.status_code == 200
         assert "message" in response.json()
 
@@ -156,7 +157,7 @@ async def test_delete_property(test_user_and_token):
     """Test deleting a property"""
     user_data, token, headers = test_user_and_token
     db = get_database()
-    
+
     # Create a property first
     async with AsyncClient(app=app, base_url="http://test") as client:
         create_response = await client.post("/admin/properties", headers=headers, json={
@@ -170,13 +171,13 @@ async def test_delete_property(test_user_and_token):
             "base_ppm": 2500
         })
         property_id = create_response.json()["id"]
-        
+
         # Delete the property
         response = await client.delete(f"/admin/properties/{property_id}", headers=headers)
-        
+
         assert response.status_code == 200
         assert "message" in response.json()
-        
+
         # Verify it's deleted
         deleted_prop = await db.properties.find_one({"_id": ObjectId(property_id)})
         assert deleted_prop is None
@@ -186,7 +187,7 @@ async def test_delete_property(test_user_and_token):
 async def test_create_renovation(test_user_and_token):
     """Test creating a renovation type"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post("/admin/renovations", headers=headers, json={
             "code": "TEST_RENO",
@@ -201,7 +202,7 @@ async def test_create_renovation(test_user_and_token):
                 "surfacePct": 0.0
             }
         })
-        
+
         assert response.status_code == 201
         data = response.json()
         assert "id" in data
@@ -211,10 +212,10 @@ async def test_create_renovation(test_user_and_token):
 async def test_get_all_renovations(test_user_and_token):
     """Test retrieving all renovation types"""
     user_data, token, headers = test_user_and_token
-    
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.get("/admin/renovations", headers=headers)
-        
+
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
@@ -225,10 +226,10 @@ async def test_get_all_renovations(test_user_and_token):
 async def test_update_renovation(test_user_and_token):
     """Test updating a renovation type"""
     user_data, token, headers = test_user_and_token
-    
+
     # Create a renovation first
     async with AsyncClient(app=app, base_url="http://test") as client:
-        create_response = await client.post("/admin/renovations", headers=headers, json={
+        await client.post("/admin/renovations", headers=headers, json={
             "code": "UPDATE_TEST",
             "label": "Update Test Reno",
             "cost": 10000,
@@ -241,7 +242,7 @@ async def test_update_renovation(test_user_and_token):
                 "surfacePct": 0.0
             }
         })
-        
+
         # Update it
         response = await client.put("/admin/renovations/UPDATE_TEST", headers=headers, json={
             "code": "UPDATE_TEST",
@@ -256,7 +257,7 @@ async def test_update_renovation(test_user_and_token):
                 "surfacePct": 0.0
             }
         })
-        
+
         assert response.status_code == 200
 
 
@@ -264,7 +265,7 @@ async def test_update_renovation(test_user_and_token):
 async def test_delete_renovation(test_user_and_token):
     """Test deleting a renovation type"""
     user_data, token, headers = test_user_and_token
-    
+
     # Create a renovation first
     async with AsyncClient(app=app, base_url="http://test") as client:
         await client.post("/admin/renovations", headers=headers, json={
@@ -280,10 +281,10 @@ async def test_delete_renovation(test_user_and_token):
                 "surfacePct": 0.0
             }
         })
-        
+
         # Delete it
         response = await client.delete("/admin/renovations/DELETE_TEST", headers=headers)
-        
+
         assert response.status_code == 200
         assert "message" in response.json()
 
@@ -298,7 +299,7 @@ async def test_admin_endpoints_require_auth():
             await client.post("/admin/properties", json={}),
             await client.get("/admin/renovations"),
         ]
-        
+
         # FastAPI returns 403 when credentials are not provided
         for response in responses:
             assert response.status_code == 403

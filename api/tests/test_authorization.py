@@ -10,9 +10,9 @@ The battery covers three separate ways a caller can be wrong:
 - entitled by omission (a user document written before ``roles`` existed);
 - not authenticated at all (missing, forged, expired or malformed token).
 """
-import pytest
 from datetime import timedelta
 
+import pytest
 from bson import ObjectId
 from httpx import AsyncClient
 from jose import jwt

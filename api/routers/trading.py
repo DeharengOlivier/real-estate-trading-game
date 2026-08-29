@@ -2,17 +2,18 @@
 Trading router - Buy/sell properties and market listings
 Single Responsibility: Property transactions and market operations
 """
-from fastapi import APIRouter, HTTPException, Query, Depends
-from bson import ObjectId
-from datetime import datetime
-from pymongo import ReturnDocument
-from typing import Optional
 import logging
+from datetime import datetime
+from typing import Any
 
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pymongo import ReturnDocument
+
+from api.auth import get_current_user
 from api.database import get_database
 from api.models import BuyRequest, SellRequest
-from api.auth import get_current_user
-from api.services import get_current_quarter, get_property_current_price, ZONE_TRENDS
+from api.services import ZONE_TRENDS, get_current_quarter, get_property_current_price
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/trading", tags=["Trading"])
@@ -45,10 +46,10 @@ async def _release_listing(db, property_id: ObjectId) -> None:
 
 @router.get("/listings")
 async def get_listings(
-    zone: Optional[str] = None,
-    type: Optional[str] = Query(None, description="Property type: house or apartment"),
-    minPrice: Optional[float] = None,
-    maxPrice: Optional[float] = None,
+    zone: str | None = None,
+    type: str | None = Query(None, description="Property type: house or apartment"),
+    minPrice: float | None = None,
+    maxPrice: float | None = None,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     limit: int = Query(50, ge=1, le=200, description="Number of results per page"),
     sortBy: str = Query("price", description="Sort by: price, surface, zone"),
@@ -59,9 +60,10 @@ async def get_listings(
     This endpoint uses a MongoDB aggregation pipeline for efficient querying.
     """
     db = get_database()
-    
-    # MongoDB Aggregation Pipeline
-    pipeline = []
+
+    # MongoDB Aggregation Pipeline. The stages are documents of mixed shape,
+    # which is what the driver expects.
+    pipeline: list[dict[str, Any]] = []
 
     # 1. Initial match on listings collection for available properties
     pipeline.append({"$match": {"isAvailable": True}})
@@ -80,13 +82,13 @@ async def get_listings(
     pipeline.append({"$unwind": "$property"})
 
     # 4. Build the filter stage ($match)
-    match_stage = {}
+    match_stage: dict[str, Any] = {}
     if zone:
         match_stage["property.zone"] = zone
     if type:
         match_stage["property.type"] = type
-    
-    price_filter = {}
+
+    price_filter: dict[str, float] = {}
     if minPrice is not None:
         price_filter["$gte"] = minPrice
     if maxPrice is not None:
@@ -103,7 +105,7 @@ async def get_listings(
         sort_field = "property.surface"
     elif sortBy == "zone":
         sort_field = "property.zone"
-    
+
     sort_order_val = 1 if sortOrder.lower() == "asc" else -1
     sort_stage = {"$sort": {sort_field: sort_order_val}}
 
@@ -139,19 +141,19 @@ async def get_listings(
 
     # Execute the aggregation pipeline
     result = await db.listings.aggregate(pipeline).to_list(length=1)
-    
+
     if not result:
         return {"items": [], "total": 0, "page": page, "limit": limit, "totalPages": 0}
 
     result_data = result[0]
     items = result_data.get("items", [])
     total_count = result_data["total"][0]["count"] if result_data.get("total") else 0
-    
+
     # Enrich items with zone trend information and quality scores
     for item in items:
         zone = item.get("zone")
         zone_trend = ZONE_TRENDS.get(zone, 0.005)
-        
+
         # Price per square metre (computed in Python for portability)
         surface = item.get("surface", 0)
         item["pricePerM2"] = round(item.get("price", 0) / surface, 2) if surface else 0
@@ -159,26 +161,26 @@ async def get_listings(
         # Add zone trend info (% per quarter)
         item["zoneTrend"] = round(zone_trend * 100, 2)  # Convert to percentage
         item["zoneTrendAnnual"] = round(zone_trend * 4 * 100, 1)  # Annual trend
-        
+
         # Calculate quality scores (0-100)
         item["epcScore"] = round(item.get("epc", 0) * 100, 1)
         item["stateScore"] = round(item.get("state", 0) * 100, 1)
         item["kitchenScore"] = round(item.get("kitchen", 0) * 100, 1)
         item["bathScore"] = round(item.get("bath", 0) * 100, 1)
-        
+
         # Overall quality score
         item["qualityScore"] = round(
             (item["epcScore"] + item["stateScore"] + item["kitchenScore"] + item["bathScore"]) / 4,
             1
         )
-        
+
         # Calculate potential appreciation (estimated value in 1 year if market continues)
         current_price = item.get("price", 0)
         estimated_1y = current_price * (1 + zone_trend * 4)
         item["estimated1YearPrice"] = round(estimated_1y, 2)
         item["estimated1YearGain"] = round(estimated_1y - current_price, 2)
         item["estimated1YearGainPct"] = round(zone_trend * 4 * 100, 1)
-    
+
     return {
         "items": items,
         "total": total_count,

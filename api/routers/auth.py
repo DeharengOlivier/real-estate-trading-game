@@ -2,22 +2,26 @@
 Authentication router - Handles user registration, login, and profile
 Single Responsibility: User authentication and authorization
 """
-from fastapi import APIRouter, HTTPException, Depends, status
-from datetime import datetime, timedelta
-from collections import defaultdict
-from itertools import count
-import time
 import logging
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta
+from itertools import count
 
+from fastapi import APIRouter, Depends, HTTPException, status
 from pymongo.errors import DuplicateKeyError
 
-from api.database import get_database, get_redis_client
-from simulation.constants import INITIAL_CASH
-from api.models import UserRegister, UserLogin, Token
 from api.auth import (
-    create_access_token, get_password_hash, authenticate_user,
-    get_current_user, ACCESS_TOKEN_EXPIRE_MINUTES, DEFAULT_ROLES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    DEFAULT_ROLES,
+    authenticate_user,
+    create_access_token,
+    get_current_user,
+    get_password_hash,
 )
+from api.database import get_database, get_redis_client
+from api.models import Token, UserLogin, UserRegister
+from simulation.constants import INITIAL_CASH
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -25,7 +29,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 # Constants for rate limiting
 LOGIN_ATTEMPT_LIMIT = 5
 LOGIN_ATTEMPT_TIMEFRAME = 300  # 5 minutes in seconds
-fallback_login_attempts = defaultdict(list)
+fallback_login_attempts: defaultdict[str, list[float]] = defaultdict(list)
 
 # Monotonic counter used to build unique sorted-set members so that several
 # attempts within the same second are counted individually (the score still
@@ -109,7 +113,7 @@ async def _cash_of(db, user_id) -> float:
 async def register(user_data: UserRegister):
     """
     Register a new user
-    
+
     Creates a new user with:
     - Unique username
     - Strong password (hashed with bcrypt)
@@ -133,7 +137,7 @@ async def register(user_data: UserRegister):
         )
 
     hashed_password = get_password_hash(user_data.password)
-    
+
     # Create user document
     # The role is decided here, by the server, and never read from the request
     # body: a registration payload carrying "roles" is ignored by UserRegister,
@@ -146,7 +150,7 @@ async def register(user_data: UserRegister):
         "roles": list(DEFAULT_ROLES),
         "createdAt": datetime.utcnow()
     }
-    
+
     try:
         result = await db.users.insert_one(user_doc)
     except DuplicateKeyError as conflict:
@@ -156,10 +160,10 @@ async def register(user_data: UserRegister):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"{field} already registered"
-        )
+        ) from conflict
 
     user_id = result.inserted_id
-    
+
     # Create portfolio for the new user
     portfolio_data = {
         "userId": user_id,
@@ -167,15 +171,15 @@ async def register(user_data: UserRegister):
         "createdAt": datetime.utcnow()
     }
     await db.portfolios.insert_one(portfolio_data)
-    
+
     logger.info(f"New user registered: {user_data.username}")
-    
+
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": str(user_id)}, expires_delta=access_token_expires
     )
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -200,21 +204,21 @@ async def login(user_data: UserLogin):
     """
     # Check rate limit before hitting the database
     await check_rate_limit(user_data.username)
-    
+
     user = await authenticate_user(user_data.username, user_data.password)
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-        
+
     # Generate JWT token
     access_token = create_access_token(data={"sub": str(user["_id"])})
-    
+
     logger.info(f"User logged in: {user_data.username}")
-    
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -233,7 +237,7 @@ async def login(user_data: UserLogin):
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """
     Get current logged-in user information
-    
+
     Returns:
     - User ID
     - Username

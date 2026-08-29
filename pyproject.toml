@@ -1,0 +1,65 @@
+[project]
+name = "real-estate-trading-game"
+version = "2.0.0"
+description = "A real-estate trading game with an economic simulation of the Belgian housing market"
+requires-python = ">=3.11"
+
+[tool.ruff]
+# The interpreter the images run and the floor CI tests against.
+target-version = "py311"
+line-length = 100
+exclude = [".venv", "ui"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes: undefined names, unused imports and variables
+    "W",    # pycodestyle warnings
+    "I",    # import ordering
+    "B",    # bugbear: the mutable-default and loop-variable-capture family
+    "UP",   # pyupgrade: syntax superseded by the minimum version above
+    "C4",   # comprehensions
+    "SIM",  # simplifiable constructs
+    "RUF",  # ruff's own checks
+]
+ignore = [
+    # The seed script prints a running commentary and reads better with the
+    # f-strings it uses everywhere.
+    "RUF001",
+    # Line length is reported by E501; formatting long strings by hand is not
+    # worth churning the pricing tables over.
+    "E501",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies, query parameters and bodies as call expressions
+# in the default value. That is the framework's signature syntax, not the
+# mutable-default bug B008 is looking for.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body",
+    "fastapi.Header", "fastapi.Form", "fastapi.File", "fastapi.Security",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Star import: the seed generates the world from the whole parameter set.
+"seed/seed_realestate.py" = ["F403", "F405"]
+# Tests unpack fixtures they only partly use; naming the parts is what makes
+# the fixture readable at the call site.
+"api/tests/*" = ["RUF059"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["api", "seed", "simulation"]
+exclude = "^(\\.venv|ui)/"
+ignore_missing_imports = true
+# Untyped code is the starting point, not the target: these two are what make
+# the type checker useful on it, without pretending the whole codebase is
+# annotated.
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# mongomock_motor and fakeredis ship no stubs.
+module = ["mongomock_motor.*", "fakeredis.*"]
+ignore_missing_imports = true

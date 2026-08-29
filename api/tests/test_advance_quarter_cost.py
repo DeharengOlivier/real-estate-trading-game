@@ -8,9 +8,9 @@ grows with the catalog.
 The correctness of the advance is covered in test_game.py. What is fixed here
 is its cost, stated as a bound rather than discovered in production.
 """
-import pytest
 from datetime import datetime
 
+import pytest
 from httpx import AsyncClient
 
 import api.routers.game as game_router

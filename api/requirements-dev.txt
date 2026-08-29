@@ -11,3 +11,7 @@
 
 mongomock-motor==0.0.36
 fakeredis==2.36.2
+
+# Static analysis. Configured in pyproject.toml; both are gates in CI.
+ruff==0.16.5
+mypy==1.19.0

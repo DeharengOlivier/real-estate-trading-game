@@ -34,7 +34,9 @@ def parse_object_id(value: str, what: str = "ID") -> ObjectId:
     try:
         return ObjectId(value)
     except (InvalidId, TypeError):
+        # `from None`: the caller is told their id is malformed, not shown the
+        # driver's parse error, which says nothing they can act on.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid {what}",
-        )
+        ) from None

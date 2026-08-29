@@ -2,19 +2,21 @@
 Game router - Game mechanics (renovations, time advancement)
 Single Responsibility: Game progression and renovation management
 """
-from fastapi import APIRouter, HTTPException, Depends
-from bson import ObjectId
-from pymongo import UpdateOne
-from typing import List
 import logging
 
+from bson import ObjectId
+from fastapi import APIRouter, Depends, HTTPException
+from pymongo import UpdateOne
+
+from api.auth import get_current_user, require_admin
 from api.database import get_database
 from api.models import RenovateRequest
-from api.auth import get_current_user, require_admin
 from api.services import (
-    get_current_quarter, add_quarters,
-    apply_renovation_delta, compute_property_price,
-    generate_next_market_quarter
+    add_quarters,
+    apply_renovation_delta,
+    compute_property_price,
+    generate_next_market_quarter,
+    get_current_quarter,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,9 +27,9 @@ router = APIRouter(prefix="/game", tags=["Game"])
 async def get_renovations():
     """Get catalog of available renovation types"""
     db = get_database()
-    
+
     renovations = await db.renovations.find().to_list(length=None)
-    
+
     results = []
     for reno in renovations:
         results.append({
@@ -37,7 +39,7 @@ async def get_renovations():
             "durationQ": reno['durationQ'],
             "delta": reno['delta']
         })
-    
+
     return results
 
 
@@ -45,20 +47,20 @@ async def get_renovations():
 async def start_renovation(request: RenovateRequest, current_user: dict = Depends(get_current_user)):
     """
     Start a renovation on a holding
-    
+
     - Deducts cost from cash
     - Adds renovation work to holding with status 'ongoing'
     - Work will be completed when advancing to endT quarter
     """
     db = get_database()
-    
+
     holding_id = ObjectId(request.holdingId)
-    
+
     # Get holding
     holding = await db.holdings.find_one({"_id": holding_id})
     if not holding:
         raise HTTPException(status_code=404, detail="Holding not found")
-    
+
     # Verify holding belongs to user's portfolio
     portfolio = await db.portfolios.find_one({
         "_id": holding["portfolioId"],
@@ -66,27 +68,27 @@ async def start_renovation(request: RenovateRequest, current_user: dict = Depend
     })
     if not portfolio:
         raise HTTPException(status_code=403, detail="Not authorized to renovate this property")
-    
+
     # Get renovation
     renovation = await db.renovations.find_one({"code": request.renoCode})
     if not renovation:
         raise HTTPException(status_code=404, detail="Renovation not found")
-    
+
     cost = renovation['cost']
     cash = portfolio['cash']
-    
+
     # Check sufficient cash
     if cash < cost:
         raise HTTPException(
             status_code=400,
             detail=f"Insufficient funds. Need {cost:,.2f} €, have {cash:,.2f} €"
         )
-    
+
     # Get current quarter
     current_t = await get_current_quarter(db)
     duration = renovation['durationQ']
     end_t = add_quarters(current_t, duration)
-    
+
     # Add work to holding
     work_item = {
         "renoId": renovation['_id'],
@@ -94,20 +96,20 @@ async def start_renovation(request: RenovateRequest, current_user: dict = Depend
         "endT": end_t,
         "status": "ongoing"
     }
-    
+
     await db.holdings.update_one(
         {"_id": holding_id},
         {"$push": {"works": work_item}}
     )
-    
+
     # Deduct cash
     await db.portfolios.update_one(
         {"_id": portfolio['_id']},
         {"$inc": {"cash": -cost}}
     )
-    
+
     logger.info(f"User {current_user['username']} started renovation {request.renoCode} on holding {holding_id}")
-    
+
     return {
         "success": True,
         "holdingId": str(holding_id),
@@ -128,28 +130,28 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
     world for everybody at once. A single player calling it would fast-forward
     every other player's game, and calling it in a loop would run the whole
     simulation out.
-    
+
     Actions performed:
     1. Generate or retrieve market data for next quarter
     2. Complete finished renovations and apply property upgrades
     3. Recalculate all property prices
     4. Update listings with new prices
     5. Insert price history records
-    
+
     Returns summary of updates
     """
     db = get_database()
-    
+
     # Get current quarter
     current_t = await get_current_quarter(db)
     next_t = add_quarters(current_t, 1)
-    
+
     # Check if next quarter exists, if not generate it
     next_market = await db.marketindex.find_one({"t": next_t})
     if not next_market:
         # Generate new market data dynamically
         next_market = await generate_next_market_quarter(db, current_t)
-    
+
     # Complete renovations that end at or before next quarter.
     # Only holdings that actually have an ongoing work due are read: the rest
     # of the table has nothing to contribute and does not need to travel.
@@ -221,11 +223,11 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
         await db.holdings.bulk_write(holding_updates)
     if property_updates:
         await db.properties.bulk_write(property_updates)
-    
+
     # Recalculate prices for all properties at next quarter
     properties = await db.properties.find().to_list(length=None)
     price_updates = []
-    
+
     for prop in properties:
         price = compute_property_price(prop, next_market)
         price_updates.append({
@@ -233,11 +235,11 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
             "t": next_t,
             "price": round(price, 2)
         })
-    
+
     # Insert new price history
     if price_updates:
         await db.pricehistory.insert_many(price_updates)
-    
+
     # Update listings with new prices. Each listing gets a different price, so
     # this cannot be one update; bulk_write makes it one round trip instead of
     # one per property.
@@ -252,9 +254,9 @@ async def advance_quarter(current_user: dict = Depends(require_admin)):
             )
             for price_update in price_updates
         ])
-    
+
     logger.info(f"Advanced from {current_t} to {next_t}: {len(price_updates)} properties updated, {completed_count} renovations completed")
-    
+
     return {
         "success": True,
         "previousQuarter": current_t,

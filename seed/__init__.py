@@ -19,10 +19,10 @@ Package Contents:
 
 Why this __init__.py file exists:
     This file marks seed/ as a Python package, enabling:
-    
+
     1. Docker Execution: The seed container can execute:
         python -m seed.seed_realestate
-        
+
     2. Code Organization: Separates seed logic from API code
 
     Without this file the seed container would fail with import errors.
@@ -50,7 +50,7 @@ Data Realism:
 Docker Usage:
     The seed script runs automatically when starting containers:
         docker-compose up
-    
+
     Or manually:
         docker-compose run seed
 """
